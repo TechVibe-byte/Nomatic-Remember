@@ -194,19 +194,10 @@ Nomatic Remember uses a dual-engine architecture to guarantee reliable delivery:
    * If a deadline is reached, it fires the Telegram alert and updates task state.
    * For recurring tasks, it automatically calculates the next occurrence timestamp and reschedules the deadline.
 
-2. **Cloud Cron Endpoint (`GET /api/cron/tick`)**:
-   * For serverless environments like **Vercel** or cloud hosting platforms that spin down containers when idle, `vercel.json` defines a 1-minute recurring cron:
-     ```json
-     {
-       "crons": [
-         {
-           "path": "/api/cron/tick",
-           "schedule": "* * * * *"
-         }
-       ]
-     }
-     ```
-   * Any external uptime monitor (e.g. UptimeRobot, Cron-Job.org, GitHub Actions) can ping `https://your-app.com/api/cron/tick` every minute to trigger reminder checks.
+2. **Free External Cron Trigger (`GET /api/cron/tick`)**:
+   * Vercel's free Hobby plan limits built-in crons to once daily and blocks 1-minute schedules unless upgraded to Pro ($20/mo).
+   * **100% Free Solution**: You can use free external cron services like [**cron-job.org**](https://cron-job.org) or [**UptimeRobot**](https://uptimerobot.com) to ping `https://your-app.com/api/cron/tick` every 1 minute for free!
+   * Simply create a free account on [cron-job.org](https://cron-job.org), set URL to `https://your-domain/api/cron/tick`, and choose execution schedule: "Every 1 minute". No Pro plan needed!
 
 ---
 
@@ -252,7 +243,6 @@ The backend exposes a full suite of JSON endpoints:
 ├── server.ts                    # Express backend, Telegram API & scheduler
 ├── reminders_store.json         # Persistent JSON file database
 ├── tsconfig.json                # TypeScript compiler configuration
-├── vercel.json                  # Vercel serverless cron config
 ├── vite.config.ts               # Vite configuration with PWA plugin
 │
 ├── public/                      # Static assets
