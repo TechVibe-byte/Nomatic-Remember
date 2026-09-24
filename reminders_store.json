@@ -1,0 +1,33 @@
+{
+  "reminders": [],
+  "telegramConfig": {
+    "botToken": "",
+    "chatId": "",
+    "username": "",
+    "enabled": true,
+    "notificationsEnabled": true,
+    "autoBackupEnabled": true,
+    "lastBackupAt": "2026-09-24T10:27:30.090Z",
+    "webhookUrl": "https://ais-dev-bi3i6labbearebbrdvx3xh-202930522319.asia-southeast1.run.app/api/telegram/webhook"
+  },
+  "rollbacks": [
+    {
+      "id": "rb-1790245650090",
+      "timestamp": "2026-09-24T10:27:30.090Z",
+      "label": "Initial Baseline Checkpoint",
+      "reminderCount": 0,
+      "triggeredBy": "manual",
+      "dataSnapshot": []
+    }
+  ],
+  "logs": [
+    {
+      "id": "log-1790245650090-cr020",
+      "type": "backup_sent",
+      "message": "Saved backup snapshot \"Initial Baseline Checkpoint\" (0 tasks)",
+      "timestamp": "2026-09-24T10:27:30.090Z",
+      "success": true,
+      "chatId": ""
+    }
+  ]
+}

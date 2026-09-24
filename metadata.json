@@ -1,0 +1,6 @@
+{
+  "name": "Nomatic Remember",
+  "description": "Smart cross-device daily task and recurring deadline reminder with real-time Telegram sync, instant alerts, cloud backups, and rollback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="50%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#0b0f19"/>
+    </linearGradient>
+    <linearGradient id="amberGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="35%" stop-color="#fbbf24"/>
+      <stop offset="80%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#d97706" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#f59e0b" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded rect -->
+  <rect width="512" height="512" rx="116" fill="url(#bgGrad)"/>
+  <rect width="504" height="504" x="4" y="4" rx="112" fill="none" stroke="#334155" stroke-width="4" opacity="0.6"/>
+
+  <!-- Subtle glow aura -->
+  <circle cx="256" cy="220" r="160" fill="url(#glowGrad)"/>
+
+  <!-- Radiance spark rays (Google Note style) -->
+  <line x1="256" y1="44" x2="256" y2="68" stroke="#fde047" stroke-width="12" stroke-linecap="round" opacity="0.9" />
+  <line x1="128" y1="96" x2="146" y2="114" stroke="#fde047" stroke-width="12" stroke-linecap="round" opacity="0.9" />
+  <line x1="384" y1="96" x2="366" y2="114" stroke="#fde047" stroke-width="12" stroke-linecap="round" opacity="0.9" />
+
+  <!-- Central Bulb Emblem (Google Note / Keep style) -->
+  <g filter="url(#shadow)">
+    <!-- Bulb Glass Body -->
+    <path d="M 256 90
+             C 186 90 130 146 130 216
+             C 130 262 155 296 180 324
+             C 186 332 190 340 190 348
+             L 322 348
+             C 322 340 326 332 332 324
+             C 357 296 382 262 382 216
+             C 382 146 326 90 256 90 Z"
+          fill="url(#amberGrad)" />
+
+    <!-- Bulb Highlight Sheen -->
+    <path d="M 166 150 C 182 114 224 104 250 100 C 230 120 184 140 166 182 Z" fill="#ffffff" fill-opacity="0.45" />
+
+    <!-- Google Keep style Inner Filament Loop -->
+    <path d="M 220 274
+             L 220 206
+             C 220 186 236 170 256 170
+             C 276 170 292 186 292 206
+             L 292 274"
+          stroke="#78350F" stroke-width="16" stroke-linecap="round" fill="none" opacity="0.85" />
+    <path d="M 230 238 L 282 238" stroke="#78350F" stroke-width="13" stroke-linecap="round" opacity="0.75" />
+
+    <!-- Screw Base Metal Threads -->
+    <path d="M 198 374 L 314 374" stroke="#94A3B8" stroke-width="18" stroke-linecap="round" />
+    <path d="M 212 404 L 300 404" stroke="#94A3B8" stroke-width="18" stroke-linecap="round" />
+
+    <!-- Bottom Contact Terminal -->
+    <path d="M 236 424 C 236 438 245 446 256 446 C 267 446 276 438 276 424 Z" fill="#64748B" />
+  </g>
+</svg>
