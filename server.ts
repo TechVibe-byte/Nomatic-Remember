@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const DATA_FILE = path.join(__dirname, 'reminders_store.json');
+const DATA_FILE = process.env.VERCEL ? path.join('/tmp', 'reminders_store.json') : path.join(__dirname, 'reminders_store.json');
 
 app.use(express.json());
 
@@ -892,4 +892,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

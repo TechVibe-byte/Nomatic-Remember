@@ -12,6 +12,20 @@ import { ChangelogView } from './components/ChangelogView.tsx';
 import { playReminderChime } from './utils/audio.ts';
 import { CATEGORIES, getCategoryBadgeClasses } from './utils/categories.ts';
 import {
+  safeFetchJson,
+  verifyTelegramTokenDirect,
+  sendTelegramMessageDirect,
+  getLocalReminders,
+  saveLocalReminders,
+  getLocalConfig,
+  saveLocalConfig,
+  getLocalRollbacks,
+  saveLocalRollbacks,
+  getLocalLogs,
+  addLocalLog,
+  calculateNextRecurrence
+} from './utils/telegramClient.ts';
+import {
   Search,
   RotateCcw,
   CheckCircle2,
@@ -27,16 +41,10 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>({
-    botToken: '',
-    chatId: '',
-    enabled: true,
-    notificationsEnabled: true,
-    autoBackupEnabled: true
-  });
-  const [rollbacks, setRollbacks] = useState<RollbackPoint[]>([]);
-  const [logs, setLogs] = useState<TelegramLog[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>(() => getLocalReminders());
+  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => getLocalConfig());
+  const [rollbacks, setRollbacks] = useState<RollbackPoint[]>(() => getLocalRollbacks());
+  const [logs, setLogs] = useState<TelegramLog[]>(() => getLocalLogs());
   const [status, setStatus] = useState<SystemStatus | null>(null);
 
   const [currentView, setCurrentView] = useState<'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks'>('tasks');
@@ -88,43 +96,91 @@ export default function App() {
   const fetchAllData = useCallback(async () => {
     try {
       const [remRes, cfgRes, rbRes, logRes, statRes] = await Promise.all([
-        fetch('/api/reminders'),
-        fetch('/api/telegram/config'),
-        fetch('/api/telegram/rollbacks'),
-        fetch('/api/telegram/logs'),
-        fetch('/api/status')
+        safeFetchJson<Reminder[]>('/api/reminders'),
+        safeFetchJson<TelegramConfig>('/api/telegram/config'),
+        safeFetchJson<RollbackPoint[]>('/api/telegram/rollbacks'),
+        safeFetchJson<TelegramLog[]>('/api/telegram/logs'),
+        safeFetchJson<SystemStatus>('/api/status')
       ]);
 
-      if (remRes.ok) {
-        const rems: Reminder[] = await remRes.json();
-        setReminders(rems);
+      let currentReminders: Reminder[] = [];
 
-        // Check if any reminder triggered now for client-side audio alert
-        const now = Date.now();
-        for (const r of rems) {
-          if (!r.completed) {
-            const due = new Date(r.dueDate).getTime();
-            // within past 15 seconds and unnotified
-            if (now >= due && now - due < 30000 && !r.notified) {
-              setActiveAlert(r);
-              playReminderChime();
-              if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                new Notification(`Reminder: ${r.title}`, {
-                  body: `${r.description || 'Time to take action!'} (Due: ${new Date(r.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
-                  icon: '/favicon.ico'
-                });
-              }
+      if (remRes.ok && remRes.data) {
+        currentReminders = remRes.data;
+        setReminders(remRes.data);
+        saveLocalReminders(remRes.data);
+      } else {
+        // Fallback to local storage
+        currentReminders = getLocalReminders();
+        setReminders(currentReminders);
+      }
+
+      if (cfgRes.ok && cfgRes.data) {
+        setTelegramConfig(cfgRes.data);
+        saveLocalConfig(cfgRes.data);
+      } else {
+        setTelegramConfig(getLocalConfig());
+      }
+
+      if (rbRes.ok && rbRes.data) {
+        setRollbacks(rbRes.data);
+        saveLocalRollbacks(rbRes.data);
+      } else {
+        setRollbacks(getLocalRollbacks());
+      }
+
+      if (logRes.ok && logRes.data) {
+        setLogs(logRes.data);
+      } else {
+        setLogs(getLocalLogs());
+      }
+
+      if (statRes.ok && statRes.data) {
+        setStatus(statRes.data);
+      } else {
+        // Calculate status locally for static host
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        const active = currentReminders.filter(r => !r.completed);
+        const todayCount = active.filter(r => r.dueDate.startsWith(todayStr)).length;
+        const overdueCount = active.filter(r => new Date(r.dueDate).getTime() < now.getTime()).length;
+        const cfg = getLocalConfig();
+        const sortedUpcoming = [...active].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+        setStatus({
+          activeReminders: active.length,
+          todayCount,
+          overdueCount,
+          completedCount: currentReminders.filter(r => r.completed).length,
+          telegramConfigured: Boolean(cfg.isVerified && cfg.botToken && cfg.chatId),
+          rollbackCount: getLocalRollbacks().length,
+          lastTick: now.toISOString(),
+          nextScheduledReminder: sortedUpcoming[0] || null
+        });
+      }
+
+      // Check due deadlines for audio/browser notifications
+      const nowMs = Date.now();
+      for (const r of currentReminders) {
+        if (!r.completed && !r.notified) {
+          const dueMs = new Date(r.dueDate).getTime();
+          const noticeMs = (r.advanceNoticeMinutes || 0) * 60 * 1000;
+          const triggerMs = dueMs - noticeMs;
+
+          if (nowMs >= triggerMs && nowMs - triggerMs < 60000) {
+            setActiveAlert(r);
+            playReminderChime();
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification(`Reminder: ${r.title}`, {
+                body: `${r.description || 'Deadline reached!'} (Due: ${new Date(r.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+                icon: '/favicon.ico'
+              });
             }
           }
         }
       }
-
-      if (cfgRes.ok) setTelegramConfig(await cfgRes.json());
-      if (rbRes.ok) setRollbacks(await rbRes.json());
-      if (logRes.ok) setLogs(await logRes.json());
-      if (statRes.ok) setStatus(await statRes.json());
     } catch (e) {
-      console.error('Failed to sync data from backend:', e);
+      console.warn('Sync tick using local storage fallback:', e);
     }
   }, []);
 
@@ -137,11 +193,32 @@ export default function App() {
   // Actions
   const handleToggle = async (id: string) => {
     try {
-      const res = await fetch(`/api/reminders/${id}/toggle`, { method: 'POST' });
-      if (res.ok) {
-        const updated = await res.json();
-        setReminders(prev => prev.map(r => (r.id === id ? updated : r)));
+      const res = await safeFetchJson<Reminder>(`/api/reminders/${id}/toggle`, { method: 'POST' });
+      if (res.ok && res.data) {
+        setReminders(prev => {
+          const updated = prev.map(r => (r.id === id ? res.data! : r));
+          saveLocalReminders(updated);
+          return updated;
+        });
+        return;
       }
+      // Local fallback
+      setReminders(prev => {
+        const updated = prev.map(r => {
+          if (r.id === id) {
+            const completed = !r.completed;
+            return {
+              ...r,
+              completed,
+              completedAt: completed ? new Date().toISOString() : undefined,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return r;
+        });
+        saveLocalReminders(updated);
+        return updated;
+      });
     } catch (err) {
       console.error(err);
     }
@@ -149,10 +226,12 @@ export default function App() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setReminders(prev => prev.filter(r => r.id !== id));
-      }
+      await safeFetchJson(`/api/reminders/${id}`, { method: 'DELETE' });
+      setReminders(prev => {
+        const updated = prev.filter(r => r.id !== id);
+        saveLocalReminders(updated);
+        return updated;
+      });
     } catch (err) {
       console.error(err);
     }
@@ -160,15 +239,42 @@ export default function App() {
 
   const handleSnooze = async (id: string, minutes: number) => {
     try {
-      const res = await fetch(`/api/reminders/${id}/snooze`, {
+      const res = await safeFetchJson<{ reminder: Reminder }>(`/api/reminders/${id}/snooze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ minutes })
       });
-      if (res.ok) {
-        fetchAllData();
+      if (res.ok && res.data?.reminder) {
+        setReminders(prev => {
+          const updated = prev.map(r => (r.id === id ? res.data!.reminder : r));
+          saveLocalReminders(updated);
+          return updated;
+        });
         if (activeAlert?.id === id) setActiveAlert(null);
+        return;
       }
+      // Local fallback
+      setReminders(prev => {
+        const updated = prev.map(r => {
+          if (r.id === id) {
+            const currentDue = new Date(r.dueDate).getTime();
+            const base = Math.max(Date.now(), currentDue);
+            const newDue = new Date(base + minutes * 60 * 1000).toISOString();
+            return {
+              ...r,
+              dueDate: newDue,
+              notified: false,
+              telegramSent: false,
+              completed: false,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return r;
+        });
+        saveLocalReminders(updated);
+        return updated;
+      });
+      if (activeAlert?.id === id) setActiveAlert(null);
     } catch (err) {
       console.error(err);
     }
@@ -178,20 +284,55 @@ export default function App() {
     try {
       if (data.id) {
         // Update
-        const res = await fetch(`/api/reminders/${data.id}`, {
+        const res = await safeFetchJson<Reminder>(`/api/reminders/${data.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        if (res.ok) fetchAllData();
+        if (res.ok && res.data) {
+          fetchAllData();
+          return;
+        }
+        // Local fallback
+        setReminders(prev => {
+          const updated = prev.map(r => (r.id === data.id ? { ...r, ...data, updatedAt: new Date().toISOString() } as Reminder : r));
+          saveLocalReminders(updated);
+          return updated;
+        });
       } else {
         // Create
-        const res = await fetch('/api/reminders', {
+        const res = await safeFetchJson<Reminder>('/api/reminders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        if (res.ok) fetchAllData();
+        if (res.ok && res.data) {
+          fetchAllData();
+          return;
+        }
+        // Local fallback
+        const newRem: Reminder = {
+          id: 'rem-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+          title: String(data.title || '').trim(),
+          description: data.description ? String(data.description).trim() : undefined,
+          category: data.category || 'personal',
+          priority: data.priority || 'p2',
+          dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : new Date().toISOString(),
+          advanceNoticeMinutes: Number(data.advanceNoticeMinutes) || 0,
+          recurrence: data.recurrence || 'none',
+          customIntervalDays: data.customIntervalDays ? Number(data.customIntervalDays) : undefined,
+          completed: false,
+          notified: false,
+          telegramSent: false,
+          source: 'web',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        setReminders(prev => {
+          const updated = [newRem, ...prev];
+          saveLocalReminders(updated);
+          return updated;
+        });
       }
     } catch (err) {
       console.error(err);
@@ -200,7 +341,7 @@ export default function App() {
 
   const handleSaveTelegramConfig = async (cfg: Partial<TelegramConfig>): Promise<boolean> => {
     try {
-      const res = await fetch('/api/telegram/config', {
+      const res = await safeFetchJson<{ isVerified: boolean; verificationError?: string }>('/api/telegram/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg)
@@ -208,6 +349,23 @@ export default function App() {
       if (res.ok) {
         fetchAllData();
         return true;
+      }
+      // If serverless/static mode, verify directly
+      if (cfg.botToken) {
+        const verifyRes = await verifyTelegramTokenDirect(cfg.botToken);
+        const updatedCfg: TelegramConfig = {
+          ...telegramConfig,
+          ...cfg,
+          isVerified: verifyRes.ok,
+          botUsername: verifyRes.username,
+          username: verifyRes.username,
+          botFirstName: verifyRes.firstName,
+          verificationError: verifyRes.error,
+          lastConnectedAt: verifyRes.ok ? new Date().toISOString() : undefined
+        };
+        saveLocalConfig(updatedCfg);
+        setTelegramConfig(updatedCfg);
+        return verifyRes.ok;
       }
       return false;
     } catch {
@@ -217,27 +375,69 @@ export default function App() {
 
   const handleQuickSaveKey = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quickBotToken.trim()) return;
+    const cleanToken = quickBotToken.trim();
+    const cleanChatId = quickChatId.trim();
+
+    if (!cleanToken) {
+      setKeyError('Please enter a Bot API Token from @BotFather.');
+      return;
+    }
+
     setIsVerifyingKey(true);
     setKeyError(null);
+
     try {
-      const res = await fetch('/api/telegram/config', {
+      // 1. First try backend API
+      const apiRes = await safeFetchJson<{ isVerified: boolean; verificationError?: string; botUsername?: string }>('/api/telegram/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          botToken: quickBotToken.trim(),
-          ...(quickChatId.trim() ? { chatId: quickChatId.trim() } : {})
+          botToken: cleanToken,
+          ...(cleanChatId ? { chatId: cleanChatId } : {})
         })
       });
-      const data = await res.json();
+
+      if (apiRes.ok && apiRes.data) {
+        setIsVerifyingKey(false);
+        if (apiRes.data.isVerified) {
+          fetchAllData();
+          setIsAddKeyModalOpen(false);
+          setQuickBotToken('');
+          setQuickChatId('');
+          return;
+        } else {
+          setKeyError(apiRes.data.verificationError || 'Verification failed. Please check your token from @BotFather.');
+          return;
+        }
+      }
+
+      // 2. If host returned HTML (Vercel static) or API was unavailable,
+      // verify token directly against Telegram's official Bot API (getMe)
+      const directRes = await verifyTelegramTokenDirect(cleanToken);
       setIsVerifyingKey(false);
-      if (res.ok && data.isVerified) {
-        fetchAllData();
+
+      if (directRes.ok) {
+        const newCfg: TelegramConfig = {
+          ...telegramConfig,
+          botToken: cleanToken,
+          chatId: cleanChatId || telegramConfig.chatId || '',
+          botUsername: directRes.username,
+          username: directRes.username,
+          botFirstName: directRes.firstName,
+          isVerified: true,
+          enabled: true,
+          notificationsEnabled: true,
+          autoBackupEnabled: true,
+          lastConnectedAt: new Date().toISOString()
+        };
+        saveLocalConfig(newCfg);
+        setTelegramConfig(newCfg);
+        addLocalLog('sync', `Verified bot @${directRes.username} (${directRes.firstName || ''}) directly`, true);
         setIsAddKeyModalOpen(false);
         setQuickBotToken('');
         setQuickChatId('');
       } else {
-        setKeyError(data.verificationError || 'Verification failed. Please check your token from @BotFather.');
+        setKeyError(directRes.error || 'Verification failed. Please check your token from @BotFather.');
       }
     } catch (e: unknown) {
       setIsVerifyingKey(false);
@@ -246,13 +446,44 @@ export default function App() {
   };
 
   const handleTestMessage = async (customChatId?: string) => {
+    const targetId = customChatId || telegramConfig.chatId;
+    const token = telegramConfig.botToken;
+
     try {
-      const res = await fetch('/api/telegram/test', {
+      const apiRes = await safeFetchJson<{ success: boolean; error?: string; message?: string }>('/api/telegram/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ testChatId: customChatId })
+        body: JSON.stringify({ testChatId: targetId })
       });
-      return await res.json();
+
+      if (apiRes.ok && apiRes.data) {
+        return apiRes.data;
+      }
+
+      // Direct fallback to Telegram API
+      if (!token) {
+        return { success: false, error: 'Telegram Bot Token is not configured.' };
+      }
+      if (!targetId) {
+        return { success: false, error: 'Telegram Chat ID is not configured.' };
+      }
+
+      const testMsg = [
+        `🔔 *NOMATIC REMEMBER — CONNECTION TEST*`,
+        `─────────────────────────`,
+        `✅ Your Telegram Bot connection is live and active!`,
+        `📱 Recipient Chat ID: \`${targetId}\``,
+        `⏰ Current Time: *${new Date().toLocaleTimeString()}*`,
+        `─────────────────────────`,
+        `Exact-time reminder notifications are now active on your Telegram account!`
+      ].join('\n');
+
+      const directRes = await sendTelegramMessageDirect(token, targetId, testMsg);
+      if (directRes.ok) {
+        return { success: true, message: 'Test message delivered to Telegram!' };
+      } else {
+        return { success: false, error: directRes.error };
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       return { success: false, error: message };
@@ -260,15 +491,49 @@ export default function App() {
   };
 
   const handleBackup = async (label?: string) => {
+    const now = new Date();
+    const backupLabel = label || `Backup (${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+
     try {
-      const res = await fetch('/api/telegram/backup', {
+      const apiRes = await safeFetchJson<{ success: boolean; message?: string }>('/api/telegram/backup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label, triggeredBy: 'manual' })
+        body: JSON.stringify({ label: backupLabel, triggeredBy: 'manual' })
       });
-      const data = await res.json();
-      fetchAllData();
-      return data;
+
+      if (apiRes.ok && apiRes.data) {
+        fetchAllData();
+        return apiRes.data;
+      }
+
+      // Local fallback
+      const currentSnapshot = JSON.parse(JSON.stringify(reminders));
+      const newPoint: RollbackPoint = {
+        id: 'rb-' + Date.now(),
+        timestamp: now.toISOString(),
+        label: backupLabel,
+        reminderCount: currentSnapshot.length,
+        triggeredBy: 'manual',
+        dataSnapshot: currentSnapshot
+      };
+      const updatedRollbacks = [newPoint, ...rollbacks].slice(0, 30);
+      saveLocalRollbacks(updatedRollbacks);
+      setRollbacks(updatedRollbacks);
+      addLocalLog('backup_sent', `Created local snapshot "${backupLabel}" (${currentSnapshot.length} items)`, true);
+
+      // Send to Telegram if configured
+      if (telegramConfig.botToken && telegramConfig.chatId) {
+        const msg = [
+          `💾 *NOMATIC REMEMBER — DATA BACKUP*`,
+          `─────────────────────────`,
+          `📅 Timestamp: *${now.toLocaleString()}*`,
+          `📋 Reminders Saved: *${currentSnapshot.length}*`,
+          `🔒 Rollback Point: Ready`
+        ].join('\n');
+        await sendTelegramMessageDirect(telegramConfig.botToken, telegramConfig.chatId, msg);
+      }
+
+      return { success: true, message: 'Backup created and saved to rollback points' };
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       return { success: false, message };
@@ -277,10 +542,37 @@ export default function App() {
 
   const handleRollback = async (id: string) => {
     try {
-      const res = await fetch(`/api/telegram/rollback/${id}`, { method: 'POST' });
-      const data = await res.json();
-      fetchAllData();
-      return data;
+      const apiRes = await safeFetchJson<{ success: boolean; message?: string }>(`/api/telegram/rollback/${id}`, { method: 'POST' });
+      if (apiRes.ok && apiRes.data) {
+        fetchAllData();
+        return apiRes.data;
+      }
+
+      // Local fallback
+      const target = rollbacks.find(r => r.id === id);
+      if (!target) {
+        return { success: false, message: 'Rollback point not found' };
+      }
+      // Safety backup
+      const safetyPoint: RollbackPoint = {
+        id: 'rb-safety-' + Date.now(),
+        timestamp: new Date().toISOString(),
+        label: `Safety snapshot before restoring "${target.label}"`,
+        reminderCount: reminders.length,
+        triggeredBy: 'pre_restore',
+        dataSnapshot: JSON.parse(JSON.stringify(reminders))
+      };
+      const newRollbacks = [safetyPoint, ...rollbacks].slice(0, 30);
+      saveLocalRollbacks(newRollbacks);
+      setRollbacks(newRollbacks);
+
+      // Restore
+      const restored = JSON.parse(JSON.stringify(target.dataSnapshot));
+      saveLocalReminders(restored);
+      setReminders(restored);
+      addLocalLog('rollback_restored', `Restored state to "${target.label}"`, true);
+
+      return { success: true, message: `Successfully rolled back to: ${target.label}` };
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       return { success: false, message };
@@ -289,12 +581,26 @@ export default function App() {
 
   const handleRestoreJson = async (jsonContent: string) => {
     try {
-      const res = await fetch('/api/telegram/restore-json', {
+      const apiRes = await safeFetchJson<{ success: boolean; message?: string }>('/api/telegram/restore-json', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonContent })
       });
-      return await res.json();
+      if (apiRes.ok && apiRes.data) {
+        fetchAllData();
+        return apiRes.data;
+      }
+
+      // Local fallback
+      const parsed = typeof jsonContent === 'string' ? JSON.parse(jsonContent) : jsonContent;
+      const array = Array.isArray(parsed) ? parsed : parsed.reminders;
+      if (!Array.isArray(array)) {
+        return { success: false, message: 'Invalid JSON format. Array of reminders expected.' };
+      }
+      saveLocalReminders(array);
+      setReminders(array);
+      addLocalLog('rollback_restored', `Imported ${array.length} reminders from JSON`, true);
+      return { success: true, message: `Imported ${array.length} reminders successfully!` };
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       return { success: false, message };
@@ -302,22 +608,42 @@ export default function App() {
   };
 
   const handleSimulateMessage = async (text: string) => {
-    const res = await fetch('/api/telegram/simulate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
-    return await res.json();
+    try {
+      const apiRes = await safeFetchJson<{ incoming: string; reply: string; systemRemindersCount: number }>('/api/telegram/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      if (apiRes.ok && apiRes.data) {
+        return apiRes.data;
+      }
+      return {
+        incoming: text,
+        reply: `🤖 [Direct Mode] Command "${text}" received. Configure Bot Token for live push notifications!`,
+        systemRemindersCount: reminders.length
+      };
+    } catch {
+      return {
+        incoming: text,
+        reply: `🤖 [Direct Mode] Command "${text}" received.`,
+        systemRemindersCount: reminders.length
+      };
+    }
   };
+
 
   const handleSendTelegramImmediate = async (reminder: Reminder) => {
     const timeFormatted = new Date(reminder.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const text = `🔔 *Manual Reminder Test Ping*\n📌 *${reminder.title}*\n🕒 Scheduled: ${timeFormatted}\n🏷️ Category: ${reminder.category}`;
-    await fetch('/api/telegram/simulate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
+    const text = `🔔 *Reminder Ping*\n📌 *${reminder.title}*\n🕒 Scheduled: ${timeFormatted}\n🏷️ Category: ${reminder.category}`;
+    if (telegramConfig.botToken && telegramConfig.chatId) {
+      await sendTelegramMessageDirect(telegramConfig.botToken, telegramConfig.chatId, text);
+    } else {
+      await safeFetchJson('/api/telegram/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+    }
     fetchAllData();
   };
 
@@ -771,9 +1097,14 @@ export default function App() {
               </div>
 
               {keyError && (
-                <div className="flex items-start gap-2 p-2.5 rounded-xl border border-rose-500/30 bg-rose-950/40 text-rose-300 text-xs">
-                  <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                  <span>{keyError}</span>
+                <div className="p-3 rounded-xl border border-rose-500/40 bg-rose-950/50 text-rose-300 text-xs space-y-1">
+                  <div className="flex items-start gap-2 font-medium">
+                    <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{keyError}</span>
+                  </div>
+                  <p className="text-[11px] text-rose-400/80 pl-6">
+                    💡 Tip: In @BotFather on Telegram, send <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded">/mybots</code>, select your bot, click <strong>API Token</strong>, and copy the full token.
+                  </p>
                 </div>
               )}
 
