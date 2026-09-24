@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -872,11 +873,15 @@ app.get('/api/cron/tick', async (_req: Request, res: Response) => {
 // Vite / Static Files Setup
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
+  const httpServer = http.createServer(app);
 
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer }
+      },
       appType: 'spa'
     });
     app.use(vite.middlewares);
@@ -887,7 +892,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[Nomatic Remember] Server running on http://0.0.0.0:${PORT}`);
   });
 }
