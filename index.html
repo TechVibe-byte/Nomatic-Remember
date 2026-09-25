@@ -6,17 +6,29 @@
       (function() {
         const origError = console.error;
         const origWarn = console.warn;
+        const origDebug = console.debug;
+        const origInfo = console.info;
+        const origLog = console.log;
+        const isViteNotice = (arg) => typeof arg === 'string' && (arg.includes('[vite]') || arg.includes('WebSocket') || arg.includes('failed to connect to websocket'));
         console.error = function(...args) {
-          if (args[0] && typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket') || args[0].includes('failed to connect to websocket'))) {
-            return;
-          }
+          if (isViteNotice(args[0])) return;
           origError.apply(console, args);
         };
         console.warn = function(...args) {
-          if (args[0] && typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket') || args[0].includes('failed to connect to websocket'))) {
-            return;
-          }
+          if (isViteNotice(args[0])) return;
           origWarn.apply(console, args);
+        };
+        console.debug = function(...args) {
+          if (isViteNotice(args[0])) return;
+          origDebug.apply(console, args);
+        };
+        console.info = function(...args) {
+          if (isViteNotice(args[0])) return;
+          origInfo.apply(console, args);
+        };
+        console.log = function(...args) {
+          if (isViteNotice(args[0])) return;
+          origLog.apply(console, args);
         };
         window.addEventListener('error', function(e) {
           if (e.message && (e.message.includes('[vite]') || e.message.includes('WebSocket'))) {

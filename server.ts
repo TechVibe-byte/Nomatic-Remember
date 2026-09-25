@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
@@ -922,6 +922,43 @@ async function startServer() {
       },
       appType: 'spa'
     });
+
+    // In AI Studio / proxied environments where HMR WebSocket is disabled or blocked on port 24678,
+    // intercept /@vite/client so it does not attempt failing WebSocket connections or emit [vite] errors.
+    app.use(async (req: Request, res: Response, next: NextFunction) => {
+      if (req.path === '/@vite/client' || req.path.endsWith('/bundledDevClient.mjs')) {
+        try {
+          const result = await vite.transformRequest(req.originalUrl || req.url);
+          if (result && result.code) {
+            const sanitized = result.code
+              .replace(/console\.debug\("\[vite\] connecting\.\.\."\);?/g, '/* [vite] connecting silenced */')
+              .replace(/console\.error\(`\[vite\] failed to connect to websocket[\s\S]*?`\);?/g, '/* [vite] error silenced */')
+              .replace(/console\.error\(`\[vite\] failed to connect to websocket \(\$\{e\}\)\. `\);?/g, '/* [vite] error silenced */')
+              .replace(
+                /const transport = normalizeModuleRunnerTransport\(\(\(\) => \{[\s\S]*?\}\)\(\)\);/g,
+                'const transport = normalizeModuleRunnerTransport({\n\t\tasync connect(handlers) { return Promise.resolve(); },\n\t\tasync disconnect() { return Promise.resolve(); },\n\t\tasync send(data) { return Promise.resolve(); }\n\t});'
+              )
+              .replace(
+                /send\(data\)\s*\{\s*ws\.send\(JSON\.stringify\(data\)\);\s*\}/g,
+                'send(data) { try { ws?.send?.(JSON.stringify(data)); } catch (_) {} }'
+              )
+              .replace(
+                /send\(data\)\s*\{\s*wsTransport\.send\(data\);\s*\}/g,
+                'send(data) { try { wsTransport?.send?.(data); } catch (_) {} }'
+              );
+
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            res.send(sanitized);
+            return;
+          }
+        } catch {
+          // fallback to default middlewares
+        }
+      }
+      next();
+    });
+
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.join(__dirname, 'dist')));

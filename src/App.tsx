@@ -842,7 +842,6 @@ export default function App() {
     (telegramConfig.hasToken || Boolean(telegramConfig.botToken)) &&
     telegramConfig.isVerified === true
   );
-  const hasTelegramKey = Boolean(telegramConfig.hasToken || Boolean(telegramConfig.botToken));
 
   return (
     <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-sans pb-20 md:pb-12">
@@ -874,7 +873,7 @@ export default function App() {
       {/* Main Workspace Viewport */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8">
         {/* Metric Cards Row */}
-        <section className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <section className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-sm flex items-center justify-between">
             <div>
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Reminders</span>
@@ -896,79 +895,6 @@ export default function App() {
             </div>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400">
               <Calendar className="w-5 h-5 text-amber-400" />
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-sm flex items-center justify-between">
-            <div className="flex-1 min-w-0 mr-3">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Telegram Link</span>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                {isTelegramConfigured ? (
-                  <>
-                    <button
-                      onClick={() => setCurrentView('telegram')}
-                      className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 text-xs font-semibold cursor-pointer truncate"
-                      title="Telegram Bot Connected - Click to view details"
-                    >
-                      <span className="relative flex h-2 w-2 shrink-0">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                      </span>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="truncate">Connected (@{telegramConfig.botUsername || 'Bot'})</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setKeyError(null);
-                        setIsAddKeyModalOpen(true);
-                      }}
-                      className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
-                      title="Update or change Bot API Key"
-                    >
-                      Change Key
-                    </button>
-                  </>
-                ) : hasTelegramKey && telegramConfig.isVerified === false ? (
-                  <>
-                    <span className="text-rose-400 flex items-center gap-1.5 text-xs font-semibold">
-                      <span className="h-2 w-2 rounded-full bg-rose-500 inline-block shrink-0"></span>
-                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      <span>Not Connected</span>
-                    </span>
-                    <button
-                      onClick={() => {
-                        setKeyError(null);
-                        setIsAddKeyModalOpen(true);
-                      }}
-                      className="px-2 py-0.5 text-[11px] font-semibold text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-md transition-colors cursor-pointer"
-                    >
-                      Fix Key
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-rose-400 flex items-center gap-1.5 text-xs font-medium">
-                      <span className="h-2 w-2 rounded-full bg-rose-500 inline-block shrink-0"></span>
-                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      <span>Not Connected</span>
-                    </span>
-                    <button
-                      onClick={() => {
-                        setKeyError(null);
-                        setIsAddKeyModalOpen(true);
-                      }}
-                      className="px-2.5 py-0.5 text-[11px] font-semibold text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-md transition-colors cursor-pointer shadow-sm"
-                    >
-                      + Add Key
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-              isTelegramConfigured ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
-            }`}>
-              <Send className="w-5 h-5" />
             </div>
           </div>
 
