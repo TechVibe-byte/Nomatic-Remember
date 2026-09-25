@@ -426,23 +426,43 @@ app.post('/api/reminders/:id/snooze', (req: Request, res: Response) => {
 // Telegram Config
 app.get('/api/telegram/config', (_req: Request, res: Response) => {
   const cfg = { ...store.telegramConfig };
-  // Mask token for security display
+  let maskedToken = '';
   if (cfg.botToken && cfg.botToken.length > 8) {
     const visibleStart = cfg.botToken.substring(0, 5);
     const visibleEnd = cfg.botToken.substring(cfg.botToken.length - 4);
-    cfg.botToken = `${visibleStart}...${visibleEnd}`;
+    maskedToken = `${visibleStart}...${visibleEnd}`;
   }
   res.json({
     ...cfg,
+    botToken: maskedToken || cfg.botToken,
+    maskedToken,
     hasToken: Boolean(store.telegramConfig.botToken && store.telegramConfig.botToken.trim().length > 0),
     isVerified: Boolean(store.telegramConfig.isVerified),
     botUsername: store.telegramConfig.botUsername || store.telegramConfig.username || ''
   });
 });
 
+// Explicit Disconnect Telegram Bot
+app.post('/api/telegram/disconnect', (_req: Request, res: Response) => {
+  store.telegramConfig.botToken = '';
+  store.telegramConfig.chatId = '';
+  store.telegramConfig.username = undefined;
+  store.telegramConfig.botUsername = undefined;
+  store.telegramConfig.botFirstName = undefined;
+  store.telegramConfig.isVerified = false;
+  store.telegramConfig.verificationError = undefined;
+  saveStore();
+  addLog('sync', 'Telegram Bot disconnected successfully', true);
+  res.json({ success: true, message: 'Telegram Bot disconnected successfully' });
+});
+
 // Verify token on-demand
 app.post('/api/telegram/verify', async (req: Request, res: Response) => {
   const token = req.body.botToken || store.telegramConfig.botToken;
+  if (!token || token.includes('...')) {
+    res.json({ ok: false, error: 'Please provide full unmasked Telegram Bot Token' });
+    return;
+  }
   const result = await verifyTelegramBot(token);
   if (result.ok && token) {
     store.telegramConfig.isVerified = true;
@@ -456,6 +476,24 @@ app.post('/api/telegram/verify', async (req: Request, res: Response) => {
 
 app.post('/api/telegram/config', async (req: Request, res: Response) => {
   const { botToken, chatId, username, enabled, notificationsEnabled, autoBackupEnabled } = req.body;
+
+  if (botToken === '') {
+    // Explicit disconnect via empty token
+    store.telegramConfig.botToken = '';
+    store.telegramConfig.chatId = '';
+    store.telegramConfig.isVerified = false;
+    store.telegramConfig.botUsername = undefined;
+    store.telegramConfig.botFirstName = undefined;
+    store.telegramConfig.verificationError = undefined;
+    saveStore();
+    addLog('sync', 'Telegram Bot cleared / disconnected', true);
+    res.json({
+      success: true,
+      isVerified: false,
+      message: 'Telegram Bot disconnected successfully'
+    });
+    return;
+  }
 
   if (botToken !== undefined && !botToken.includes('...')) {
     store.telegramConfig.botToken = String(botToken).trim();
@@ -476,8 +514,8 @@ app.post('/api/telegram/config', async (req: Request, res: Response) => {
     store.telegramConfig.autoBackupEnabled = Boolean(autoBackupEnabled);
   }
 
-  // Live verification with Telegram API getMe
-  if (store.telegramConfig.botToken) {
+  // Live verification with Telegram API getMe if full token is provided
+  if (store.telegramConfig.botToken && !store.telegramConfig.botToken.includes('...')) {
     const check = await verifyTelegramBot(store.telegramConfig.botToken);
     if (check.ok) {
       store.telegramConfig.isVerified = true;
@@ -491,7 +529,7 @@ app.post('/api/telegram/config', async (req: Request, res: Response) => {
       store.telegramConfig.verificationError = check.error;
       addLog('error', `Telegram bot token validation failed: ${check.error}`, false);
     }
-  } else {
+  } else if (!store.telegramConfig.botToken) {
     store.telegramConfig.isVerified = false;
     store.telegramConfig.botUsername = undefined;
     store.telegramConfig.botFirstName = undefined;

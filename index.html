@@ -1,6 +1,37 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      // Suppress Vite HMR WebSocket connection notices in environments where HMR is disabled or proxied
+      (function() {
+        const origError = console.error;
+        const origWarn = console.warn;
+        console.error = function(...args) {
+          if (args[0] && typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket') || args[0].includes('failed to connect to websocket'))) {
+            return;
+          }
+          origError.apply(console, args);
+        };
+        console.warn = function(...args) {
+          if (args[0] && typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket') || args[0].includes('failed to connect to websocket'))) {
+            return;
+          }
+          origWarn.apply(console, args);
+        };
+        window.addEventListener('error', function(e) {
+          if (e.message && (e.message.includes('[vite]') || e.message.includes('WebSocket'))) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+          if (e.reason && typeof e.reason === 'object' && e.reason.message && (e.reason.message.includes('[vite]') || e.reason.message.includes('WebSocket'))) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        });
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Nomatic Remember</title>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Reminder, TelegramConfig, RollbackPoint, TelegramLog, SystemStatus } from './types.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { ReminderCard } from './components/ReminderCard.tsx';
@@ -19,6 +19,7 @@ import {
   saveLocalReminders,
   getLocalConfig,
   saveLocalConfig,
+  disconnectTelegramLocal,
   getLocalRollbacks,
   saveLocalRollbacks,
   getLocalLogs,
@@ -58,6 +59,9 @@ export default function App() {
   const [activeAlert, setActiveAlert] = useState<Reminder | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('default');
 
+  // Track session alerted IDs to prevent alert chime spam while guaranteeing due reminders alert
+  const alertedSessionIdsRef = useRef<Set<string>>(new Set());
+
   // Quick Add Telegram Key Modal state
   const [isAddKeyModalOpen, setIsAddKeyModalOpen] = useState(false);
   const [quickBotToken, setQuickBotToken] = useState('');
@@ -91,6 +95,118 @@ export default function App() {
       }
     }
   };
+
+  // Test in-app notification chime and banner
+  const handleTestInAppNotification = () => {
+    playReminderChime();
+    const testRem: Reminder = {
+      id: 'test-alert-' + Date.now(),
+      title: '🔔 In-App Notification Test',
+      description: 'Your chime sound and notification banner are working smoothly in-app!',
+      category: 'personal',
+      priority: 'p1',
+      dueDate: new Date().toISOString(),
+      advanceNoticeMinutes: 0,
+      recurrence: 'none',
+      completed: false,
+      notified: true,
+      telegramSent: Boolean(telegramConfig.isVerified && telegramConfig.chatId),
+      source: 'web',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    setActiveAlert(testRem);
+
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification('🔔 Nomatic Remember Test Alert', {
+          body: 'Your in-app alert banner and audio chime are working perfectly!',
+          icon: '/favicon.ico'
+        });
+      } catch (e) {
+        console.warn('Web notification test error:', e);
+      }
+    }
+  };
+
+  // Exact-time in-app notification checker
+  const checkInAppNotifications = useCallback((remsList: Reminder[]) => {
+    const nowMs = Date.now();
+    for (const r of remsList) {
+      if (r.completed) continue;
+
+      const dueMs = new Date(r.dueDate).getTime();
+      const noticeMs = (r.advanceNoticeMinutes || 0) * 60 * 1000;
+      const triggerMs = dueMs - noticeMs;
+
+      // Has this deadline arrived?
+      if (nowMs >= triggerMs) {
+        // Only alert if we haven't already alerted this reminder during this session
+        if (!alertedSessionIdsRef.current.has(r.id)) {
+          alertedSessionIdsRef.current.add(r.id);
+          setActiveAlert(r);
+          playReminderChime();
+
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              const timeFormatted = new Date(r.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              new Notification(`⏰ Reminder: ${r.title}`, {
+                body: `${r.description || 'Deadline reached!'} (Due: ${timeFormatted})`,
+                icon: '/favicon.ico',
+                tag: r.id
+              });
+            } catch (err) {
+              console.warn('Push notification error:', err);
+            }
+          }
+
+          // If Telegram is configured and alert hasn't been sent, dispatch directly
+          const cfg = getLocalConfig();
+          if (cfg.isVerified && cfg.botToken && cfg.chatId && !r.telegramSent) {
+            const timeFormatted = new Date(r.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const priorityEmoji = r.priority === 'p1' ? '🔴 High' : r.priority === 'p2' ? '🟡 Medium' : '🟢 Normal';
+            const msg = [
+              `⏰ *NOMATIC REMEMBER ALERT*`,
+              `─────────────────────────`,
+              `📌 *${r.title}*`,
+              r.description ? `📝 _${r.description}_` : '',
+              `🏷️ Category: *${r.category.toUpperCase()}* | Priority: ${priorityEmoji}`,
+              `🕒 Scheduled Time: *${timeFormatted}*`,
+              r.recurrence !== 'none' ? `🔁 Recurring: *${r.recurrence.toUpperCase()}*` : '',
+              `─────────────────────────`,
+              `Delivered via Nomatic Remember.`
+            ].filter(Boolean).join('\n');
+
+            sendTelegramMessageDirect(cfg.botToken, cfg.chatId, msg).then(res => {
+              if (res.ok) {
+                setReminders(prev => {
+                  const updated = prev.map(item => item.id === r.id ? { ...item, telegramSent: true } : item);
+                  saveLocalReminders(updated);
+                  return updated;
+                });
+              }
+            }).catch(() => {});
+          }
+
+          // If recurring and past due time, advance recurrence
+          if (r.recurrence !== 'none' && nowMs >= dueMs) {
+            const nextDue = calculateNextRecurrence(r.dueDate, r.recurrence, r.customIntervalDays);
+            setReminders(prev => {
+              const updated = prev.map(item => {
+                if (item.id === r.id) {
+                  return { ...item, dueDate: nextDue, notified: false, telegramSent: false };
+                }
+                return item;
+              });
+              saveLocalReminders(updated);
+              return updated;
+            });
+            alertedSessionIdsRef.current.delete(r.id);
+          }
+        }
+      }
+    }
+  }, []);
 
   // Fetch reminders and status
   const fetchAllData = useCallback(async () => {
@@ -160,35 +276,28 @@ export default function App() {
       }
 
       // Check due deadlines for audio/browser notifications
-      const nowMs = Date.now();
-      for (const r of currentReminders) {
-        if (!r.completed && !r.notified) {
-          const dueMs = new Date(r.dueDate).getTime();
-          const noticeMs = (r.advanceNoticeMinutes || 0) * 60 * 1000;
-          const triggerMs = dueMs - noticeMs;
-
-          if (nowMs >= triggerMs && nowMs - triggerMs < 60000) {
-            setActiveAlert(r);
-            playReminderChime();
-            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-              new Notification(`Reminder: ${r.title}`, {
-                body: `${r.description || 'Deadline reached!'} (Due: ${new Date(r.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
-                icon: '/favicon.ico'
-              });
-            }
-          }
-        }
-      }
+      checkInAppNotifications(currentReminders);
     } catch (e) {
       console.warn('Sync tick using local storage fallback:', e);
     }
-  }, []);
+  }, [checkInAppNotifications]);
 
   useEffect(() => {
     fetchAllData();
-    const interval = setInterval(fetchAllData, 8000);
-    return () => clearInterval(interval);
-  }, [fetchAllData]);
+    const syncInterval = setInterval(fetchAllData, 8000);
+    // Exact-time ticker running every 2 seconds for instantaneous in-app notification
+    const tickInterval = setInterval(() => {
+      setReminders(latest => {
+        checkInAppNotifications(latest);
+        return latest;
+      });
+    }, 2000);
+
+    return () => {
+      clearInterval(syncInterval);
+      clearInterval(tickInterval);
+    };
+  }, [fetchAllData, checkInAppNotifications]);
 
   // Actions
   const handleToggle = async (id: string) => {
@@ -251,6 +360,7 @@ export default function App() {
           return updated;
         });
         if (activeAlert?.id === id) setActiveAlert(null);
+        alertedSessionIdsRef.current.delete(id);
         return;
       }
       // Local fallback
@@ -275,6 +385,7 @@ export default function App() {
         return updated;
       });
       if (activeAlert?.id === id) setActiveAlert(null);
+      alertedSessionIdsRef.current.delete(id);
     } catch (err) {
       console.error(err);
     }
@@ -283,6 +394,7 @@ export default function App() {
   const handleSaveReminder = async (data: Partial<Reminder>) => {
     try {
       if (data.id) {
+        alertedSessionIdsRef.current.delete(data.id);
         // Update
         const res = await safeFetchJson<Reminder>(`/api/reminders/${data.id}`, {
           method: 'PUT',
@@ -339,19 +451,38 @@ export default function App() {
     }
   };
 
+  const handleDisconnectTelegram = async (): Promise<boolean> => {
+    try {
+      await safeFetchJson('/api/telegram/disconnect', { method: 'POST' });
+    } catch {
+      // ignore
+    }
+    const cleared = disconnectTelegramLocal();
+    setTelegramConfig(cleared);
+    fetchAllData();
+    return true;
+  };
+
   const handleSaveTelegramConfig = async (cfg: Partial<TelegramConfig>): Promise<boolean> => {
     try {
+      if (cfg.botToken === '') {
+        return handleDisconnectTelegram();
+      }
+
       const res = await safeFetchJson<{ isVerified: boolean; verificationError?: string }>('/api/telegram/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg)
       });
       if (res.ok) {
+        if (cfg.botToken && !cfg.botToken.includes('...')) {
+          saveLocalConfig({ ...telegramConfig, ...cfg });
+        }
         fetchAllData();
         return true;
       }
       // If serverless/static mode, verify directly
-      if (cfg.botToken) {
+      if (cfg.botToken && !cfg.botToken.includes('...')) {
         const verifyRes = await verifyTelegramTokenDirect(cfg.botToken);
         const updatedCfg: TelegramConfig = {
           ...telegramConfig,
@@ -366,6 +497,14 @@ export default function App() {
         saveLocalConfig(updatedCfg);
         setTelegramConfig(updatedCfg);
         return verifyRes.ok;
+      } else if (cfg.chatId) {
+        const updatedCfg: TelegramConfig = {
+          ...telegramConfig,
+          ...cfg
+        };
+        saveLocalConfig(updatedCfg);
+        setTelegramConfig(updatedCfg);
+        return true;
       }
       return false;
     } catch {
@@ -400,6 +539,17 @@ export default function App() {
       if (apiRes.ok && apiRes.data) {
         setIsVerifyingKey(false);
         if (apiRes.data.isVerified) {
+          const newCfg: TelegramConfig = {
+            ...telegramConfig,
+            botToken: cleanToken,
+            chatId: cleanChatId || telegramConfig.chatId || '',
+            botUsername: apiRes.data.botUsername,
+            isVerified: true,
+            enabled: true,
+            notificationsEnabled: true
+          };
+          saveLocalConfig(newCfg);
+          setTelegramConfig(newCfg);
           fetchAllData();
           setIsAddKeyModalOpen(false);
           setQuickBotToken('');
@@ -707,6 +857,7 @@ export default function App() {
         telegramConnected={isTelegramConfigured}
         onRequestNotificationPermission={requestNotificationPermission}
         notificationPermission={notificationPermission}
+        onTestAlert={handleTestInAppNotification}
       />
 
       {/* Floating In-App Reminder Alert Banner */}
@@ -851,6 +1002,7 @@ export default function App() {
             onRollback={handleRollback}
             onRestoreJson={handleRestoreJson}
             onSimulateMessage={handleSimulateMessage}
+            onDisconnect={handleDisconnectTelegram}
             onRefresh={fetchAllData}
           />
         ) : currentView === 'rollbacks' ? (
@@ -1108,34 +1260,51 @@ export default function App() {
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAddKeyModalOpen(false);
-                    setKeyError(null);
-                  }}
-                  className="px-4 py-2 text-xs text-slate-400 hover:text-white rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isVerifyingKey || !quickBotToken.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-emerald-400 text-slate-950 rounded-xl hover:bg-emerald-300 disabled:opacity-50 transition-all cursor-pointer shadow-md"
-                >
-                  {isVerifyingKey ? (
-                    <>
-                      <span className="w-3 h-3 rounded-full border-2 border-slate-950 border-t-transparent animate-spin"></span>
-                      <span>Verifying...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Verify & Connect Key</span>
-                    </>
-                  )}
-                </button>
+              <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-slate-800">
+                {(telegramConfig.hasToken || telegramConfig.isVerified || telegramConfig.botToken) ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleDisconnectTelegram();
+                      setIsAddKeyModalOpen(false);
+                      setQuickBotToken('');
+                      setQuickChatId('');
+                    }}
+                    className="px-3 py-2 text-xs font-medium text-rose-300 bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/60 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Disconnect Current Bot
+                  </button>
+                ) : <span />}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddKeyModalOpen(false);
+                      setKeyError(null);
+                    }}
+                    className="px-4 py-2 text-xs text-slate-400 hover:text-white rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isVerifyingKey || !quickBotToken.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-emerald-400 text-slate-950 rounded-xl hover:bg-emerald-300 disabled:opacity-50 transition-all cursor-pointer shadow-md"
+                  >
+                    {isVerifyingKey ? (
+                      <>
+                        <span className="w-3 h-3 rounded-full border-2 border-slate-950 border-t-transparent animate-spin"></span>
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Verify & Connect Key</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

@@ -113,11 +113,19 @@ export async function sendTelegramMessageDirect(
   chatId: string,
   text: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const cleanToken = token.trim();
+  let cleanToken = token.trim();
   const cleanChatId = chatId.trim();
 
-  if (!cleanToken) {
-    return { ok: false, error: 'Telegram Bot Token is not configured.' };
+  // If token provided is masked, retrieve full unmasked token from local config
+  if (cleanToken.includes('...')) {
+    const stored = getLocalConfig();
+    if (stored.botToken && !stored.botToken.includes('...')) {
+      cleanToken = stored.botToken.trim();
+    }
+  }
+
+  if (!cleanToken || cleanToken.includes('...')) {
+    return { ok: false, error: 'Valid Telegram Bot Token is not configured. Please paste your Bot Token from @BotFather.' };
   }
   if (!cleanChatId) {
     return { ok: false, error: 'Telegram Chat ID is not configured.' };
@@ -201,10 +209,47 @@ export function getLocalConfig(): TelegramConfig {
 export function saveLocalConfig(cfg: TelegramConfig): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(cfg));
+    const prev = getLocalConfig();
+    // Preserve full unmasked botToken if new cfg has a masked token
+    const tokenToSave =
+      cfg.botToken && !cfg.botToken.includes('...')
+        ? cfg.botToken
+        : prev.botToken && !prev.botToken.includes('...')
+        ? prev.botToken
+        : cfg.botToken || '';
+
+    const sanitized: TelegramConfig = {
+      ...cfg,
+      botToken: tokenToSave
+    };
+    localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(sanitized));
   } catch (e) {
     console.warn('Could not write config to localStorage:', e);
   }
+}
+
+export function disconnectTelegramLocal(): TelegramConfig {
+  const cleared: TelegramConfig = {
+    botToken: '',
+    chatId: '',
+    username: '',
+    botUsername: '',
+    botFirstName: '',
+    enabled: false,
+    notificationsEnabled: false,
+    autoBackupEnabled: false,
+    isVerified: false,
+    verificationError: undefined
+  };
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(cleared));
+      addLocalLog('sync', 'Telegram bot disconnected and cleared', true);
+    } catch {
+      // ignore
+    }
+  }
+  return cleared;
 }
 
 export function getLocalRollbacks(): RollbackPoint[] {

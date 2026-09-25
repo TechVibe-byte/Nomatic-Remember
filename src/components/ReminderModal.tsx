@@ -78,10 +78,10 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
     e.preventDefault();
     if (!title.trim()) return;
 
-    // Combine date and time
+    // Combine date and time in local timezone
     const [hh, mm] = dueTime.split(':').map(Number);
-    const combined = new Date(dueDate);
-    combined.setHours(hh || 0, mm || 0, 0, 0);
+    const [year, month, day] = dueDate.split('-').map(Number);
+    const combined = new Date(year, (month || 1) - 1, day || 1, hh || 0, mm || 0, 0, 0);
 
     onSave({
       ...(initialData ? { id: initialData.id } : {}),

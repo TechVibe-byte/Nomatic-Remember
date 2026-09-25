@@ -1,6 +1,6 @@
 import React from 'react';
 import { NrLogo } from './NrLogo.tsx';
-import { Plus, Bell, Send } from 'lucide-react';
+import { Plus, Bell, Send, Volume2 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
 
 interface NavbarProps {
@@ -10,6 +10,7 @@ interface NavbarProps {
   telegramConnected: boolean;
   onRequestNotificationPermission: () => void;
   notificationPermission: NotificationPermission | 'unsupported';
+  onTestAlert?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -18,7 +19,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNewModal,
   telegramConnected,
   onRequestNotificationPermission,
-  notificationPermission
+  notificationPermission,
+  onTestAlert
 }) => {
   return (
     <header className="sticky top-0 z-30 w-full border-b border-slate-800/80 bg-[#0f172a]/90 backdrop-blur-md transition-colors">
@@ -90,15 +92,26 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2 sm:gap-2.5">
           <PWAInstallButton />
 
-          {notificationPermission !== 'granted' && (
+          {notificationPermission !== 'granted' ? (
             <button
               onClick={onRequestNotificationPermission}
-              title="Enable Browser Push Notifications"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700 rounded-lg border border-slate-700/60 transition-colors whitespace-nowrap"
+              title="Enable In-App & Browser Notifications"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-amber-300 bg-amber-950/40 hover:bg-amber-900/40 rounded-lg border border-amber-600/40 transition-colors whitespace-nowrap cursor-pointer"
             >
               <Bell className="w-3.5 h-3.5 text-amber-400" />
-              <span>Enable Push</span>
+              <span className="hidden xs:inline">Enable Alerts</span>
             </button>
+          ) : (
+            onTestAlert && (
+              <button
+                onClick={onTestAlert}
+                title="Test In-App Notification & Chime Sound"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-emerald-300 bg-emerald-950/40 hover:bg-emerald-900/40 rounded-lg border border-emerald-600/40 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Test Alert</span>
+              </button>
+            )
           )}
 
           <button

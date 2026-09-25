@@ -14,7 +14,8 @@ import {
   Download,
   Upload,
   CloudLightning,
-  Sparkles
+  Sparkles,
+  Unlink
 } from 'lucide-react';
 
 interface TelegramDrawerProps {
@@ -28,6 +29,7 @@ interface TelegramDrawerProps {
   onRollback: (id: string) => Promise<{ success: boolean; message?: string }>;
   onRestoreJson: (json: string) => Promise<{ success: boolean; message?: string }>;
   onSimulateMessage: (text: string) => Promise<{ incoming: string; reply: string }>;
+  onDisconnect?: () => Promise<boolean>;
   onRefresh: () => void;
 }
 
@@ -42,6 +44,7 @@ export const TelegramDrawer: React.FC<TelegramDrawerProps> = ({
   onRollback,
   onRestoreJson,
   onSimulateMessage,
+  onDisconnect,
   onRefresh
 }) => {
   const [activeTab, setActiveTab] = useState<'settings' | 'simulator' | 'backups' | 'vercel'>('settings');
@@ -104,13 +107,37 @@ export const TelegramDrawer: React.FC<TelegramDrawerProps> = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveStatus('Saving...');
-    const ok = await onSaveConfig({ botToken, chatId, enabled: true });
+    const ok = await onSaveConfig({
+      ...(botToken.includes('...') ? {} : { botToken: botToken.trim() }),
+      chatId: chatId.trim(),
+      enabled: true
+    });
     if (ok) {
       setSaveStatus('Settings updated successfully!');
       setTimeout(() => setSaveStatus(null), 3000);
+      onRefresh();
     } else {
       setSaveStatus('Failed to update settings');
     }
+  };
+
+  const handleDisconnect = async () => {
+    if (!window.confirm('Are you sure you want to disconnect Telegram Bot? In-app notifications and alerts will continue working normally!')) {
+      return;
+    }
+    setSaveStatus('Disconnecting...');
+    setBotToken('');
+    setChatId('');
+    setVerifyStatus(null);
+    setTestResult(null);
+    if (onDisconnect) {
+      await onDisconnect();
+    } else {
+      await onSaveConfig({ botToken: '', chatId: '', enabled: false });
+    }
+    setSaveStatus('Telegram Bot disconnected. In-app notifications remain fully active!');
+    setTimeout(() => setSaveStatus(null), 4000);
+    onRefresh();
   };
 
   const handleTest = async () => {
@@ -321,7 +348,7 @@ export const TelegramDrawer: React.FC<TelegramDrawerProps> = ({
                 <div className="text-xs text-emerald-400 font-medium">{saveStatus}</div>
               )}
 
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex flex-wrap items-center gap-3 pt-2">
                 <button
                   type="submit"
                   className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
@@ -339,6 +366,18 @@ export const TelegramDrawer: React.FC<TelegramDrawerProps> = ({
                   <Send className="w-3.5 h-3.5" />
                   <span>{testing ? 'Sending Test...' : 'Send Live Test Alert'}</span>
                 </button>
+
+                {(config.hasToken || config.isVerified || botToken) && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnect}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold text-rose-300 bg-rose-950/40 border border-rose-800/60 hover:bg-rose-900/40 rounded-xl transition-all cursor-pointer ml-auto"
+                    title="Disconnect Telegram Bot"
+                  >
+                    <Unlink className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Disconnect Bot</span>
+                  </button>
+                )}
               </div>
 
               {testResult && (
