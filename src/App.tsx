@@ -9,6 +9,7 @@ import { MobileBottomNav } from './components/MobileBottomNav.tsx';
 import { NotificationBanner } from './components/NotificationBanner.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ChangelogView } from './components/ChangelogView.tsx';
+import { GitHubActionsView } from './components/GitHubActionsView.tsx';
 import { playReminderChime } from './utils/audio.ts';
 import { CATEGORIES, getCategoryBadgeClasses } from './utils/categories.ts';
 import {
@@ -38,7 +39,8 @@ import {
   Calendar,
   Key,
   X,
-  ExternalLink
+  ExternalLink,
+  Zap
 } from 'lucide-react';
 
 export default function App() {
@@ -48,7 +50,7 @@ export default function App() {
   const [logs, setLogs] = useState<TelegramLog[]>(() => getLocalLogs());
   const [status, setStatus] = useState<SystemStatus | null>(null);
 
-  const [currentView, setCurrentView] = useState<'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks'>('tasks');
+  const [currentView, setCurrentView] = useState<'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks' | 'github-actions'>('tasks');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -940,9 +942,33 @@ export default function App() {
             onBackup={handleBackup}
             onRefresh={fetchAllData}
           />
+        ) : currentView === 'github-actions' ? (
+          <GitHubActionsView
+            onBackToTasks={() => setCurrentView('tasks')}
+            telegramConnected={isTelegramConfigured}
+          />
         ) : (
           /* Tasks View: All / Today / Upcoming */
           <div className="space-y-6">
+            {/* GitHub Actions Automation Status Bar */}
+            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                  GitHub Actions Runner
+                </span>
+                <span className="text-slate-400 hidden sm:inline">&bull; Exact-time alerts & Telegram sync active</span>
+              </div>
+              <button
+                onClick={() => setCurrentView('github-actions')}
+                className="flex items-center gap-1 font-semibold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer text-[11px]"
+              >
+                <span>Workflow & Secrets</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
+
             {/* Quick Add Bar with Natural Language Parsing */}
             <QuickAddBar onAdd={handleSaveReminder} />
 

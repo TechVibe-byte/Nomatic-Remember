@@ -65,11 +65,32 @@ export interface RollbackPoint {
 
 export interface TelegramLog {
   id: string;
-  type: 'reminder_sent' | 'bot_received' | 'backup_sent' | 'rollback_restored' | 'test' | 'error' | 'sync';
+  type: 'reminder_sent' | 'bot_received' | 'backup_sent' | 'rollback_restored' | 'test' | 'error' | 'sync' | 'github_actions';
   message: string;
   timestamp: string;
   success: boolean;
   chatId?: string;
+}
+
+export interface GitHubActionRun {
+  id: string;
+  timestamp: string;
+  trigger: 'schedule' | 'workflow_dispatch' | 'manual_test' | 'webhook';
+  status: 'success' | 'warning' | 'failed';
+  checkedCount: number;
+  notifiedCount: number;
+  details?: string;
+  notifiedTitles?: string[];
+  durationMs?: number;
+}
+
+export interface GitHubActionsConfig {
+  enabled: boolean;
+  secret: string;
+  scheduleCron: string;
+  endpointUrl: string;
+  lastRun?: GitHubActionRun;
+  totalRuns: number;
 }
 
 export interface SystemStatus {
@@ -81,4 +102,5 @@ export interface SystemStatus {
   rollbackCount: number;
   lastTick: string;
   nextScheduledReminder?: Reminder;
+  githubActionsLastRun?: GitHubActionRun;
 }

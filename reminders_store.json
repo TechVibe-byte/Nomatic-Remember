@@ -22,6 +22,30 @@
   ],
   "logs": [
     {
+      "id": "log-1790402435709-tbezx",
+      "type": "github_actions",
+      "message": "GitHub Actions [digest]: Morning Daily Digest dispatched (0 tasks due today) (10ms)",
+      "timestamp": "2026-09-26T06:00:35.709Z",
+      "success": true,
+      "chatId": ""
+    },
+    {
+      "id": "log-1790402428113-laasz",
+      "type": "github_actions",
+      "message": "GitHub Actions [tick]: Evaluated 0 reminder(s). No deadlines due at this time. (0ms)",
+      "timestamp": "2026-09-26T06:00:28.113Z",
+      "success": true,
+      "chatId": ""
+    },
+    {
+      "id": "log-1790402423609-fsmxn",
+      "type": "github_actions",
+      "message": "GitHub Actions [tick]: Evaluated 0 reminder(s). No deadlines due at this time. (1ms)",
+      "timestamp": "2026-09-26T06:00:23.609Z",
+      "success": true,
+      "chatId": ""
+    },
+    {
       "id": "log-1790245650090-cr020",
       "type": "backup_sent",
       "message": "Saved backup snapshot \"Initial Baseline Checkpoint\" (0 tasks)",
@@ -29,5 +53,44 @@
       "success": true,
       "chatId": ""
     }
-  ]
+  ],
+  "githubActions": {
+    "secret": "nr_gh_sec_qbda0ivq",
+    "scheduleCron": "*/15 * * * *",
+    "runs": [
+      {
+        "id": "gh-run-1790402435709",
+        "timestamp": "2026-09-26T06:00:35.709Z",
+        "trigger": "webhook",
+        "status": "success",
+        "checkedCount": 1,
+        "notifiedCount": 0,
+        "notifiedTitles": [],
+        "durationMs": 10,
+        "details": "Morning Daily Digest dispatched (0 tasks due today)"
+      },
+      {
+        "id": "gh-run-1790402428113",
+        "timestamp": "2026-09-26T06:00:28.113Z",
+        "trigger": "webhook",
+        "status": "success",
+        "checkedCount": 0,
+        "notifiedCount": 0,
+        "notifiedTitles": [],
+        "durationMs": 0,
+        "details": "Evaluated 0 reminder(s). No deadlines due at this time."
+      },
+      {
+        "id": "gh-run-1790402423609",
+        "timestamp": "2026-09-26T06:00:23.609Z",
+        "trigger": "workflow_dispatch",
+        "status": "success",
+        "checkedCount": 0,
+        "notifiedCount": 0,
+        "notifiedTitles": [],
+        "durationMs": 1,
+        "details": "Evaluated 0 reminder(s). No deadlines due at this time."
+      }
+    ]
+  }
 }

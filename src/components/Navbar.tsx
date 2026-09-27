@@ -1,11 +1,11 @@
 import React from 'react';
 import { NrLogo } from './NrLogo.tsx';
-import { Plus, Bell, Send, Volume2 } from 'lucide-react';
+import { Plus, Bell, Send, Volume2, Zap } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
 
 interface NavbarProps {
-  currentView: 'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks';
-  onSelectView: (view: 'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks') => void;
+  currentView: 'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks' | 'github-actions';
+  onSelectView: (view: 'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks' | 'github-actions') => void;
   onOpenNewModal: () => void;
   telegramConnected: boolean;
   onRequestNotificationPermission: () => void;
@@ -38,11 +38,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
 
-        {/* Zone 2: 4-5 Clean Text Navigation Links (Single-Line, subtle hover) */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
+        {/* Zone 2: Clean Text Navigation Links */}
+        <nav className="hidden md:flex items-center gap-5 lg:gap-6 text-sm font-medium text-slate-400">
           <button
             onClick={() => onSelectView('tasks')}
-            className={`transition-colors hover:text-white whitespace-nowrap ${
+            className={`transition-colors hover:text-white whitespace-nowrap cursor-pointer ${
               currentView === 'tasks' ? 'text-amber-400 font-semibold border-b-2 border-amber-400 pb-0.5' : ''
             }`}
           >
@@ -50,7 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={() => onSelectView('today')}
-            className={`transition-colors hover:text-white whitespace-nowrap ${
+            className={`transition-colors hover:text-white whitespace-nowrap cursor-pointer ${
               currentView === 'today' ? 'text-amber-400 font-semibold border-b-2 border-amber-400 pb-0.5' : ''
             }`}
           >
@@ -58,7 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={() => onSelectView('upcoming')}
-            className={`transition-colors hover:text-white whitespace-nowrap ${
+            className={`transition-colors hover:text-white whitespace-nowrap cursor-pointer ${
               currentView === 'upcoming' ? 'text-amber-400 font-semibold border-b-2 border-amber-400 pb-0.5' : ''
             }`}
           >
@@ -66,7 +66,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={() => onSelectView('telegram')}
-            className={`flex items-center gap-1.5 transition-colors hover:text-white whitespace-nowrap ${
+            className={`flex items-center gap-1.5 transition-colors hover:text-white whitespace-nowrap cursor-pointer ${
               currentView === 'telegram' ? 'text-amber-400 font-semibold border-b-2 border-amber-400 pb-0.5' : ''
             }`}
           >
@@ -79,8 +79,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
           <button
+            onClick={() => onSelectView('github-actions')}
+            className={`flex items-center gap-1.5 transition-colors hover:text-white whitespace-nowrap cursor-pointer ${
+              currentView === 'github-actions' ? 'text-amber-400 font-semibold border-b-2 border-amber-400 pb-0.5' : ''
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>GitHub Actions</span>
+          </button>
+          <button
             onClick={() => onSelectView('rollbacks')}
-            className={`transition-colors hover:text-white whitespace-nowrap ${
+            className={`transition-colors hover:text-white whitespace-nowrap cursor-pointer ${
               currentView === 'rollbacks' ? 'text-amber-400 font-semibold border-b-2 border-amber-400 pb-0.5' : ''
             }`}
           >

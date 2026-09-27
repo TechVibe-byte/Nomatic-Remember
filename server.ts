@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { Reminder, TelegramConfig, RollbackPoint, TelegramLog, RecurrenceType } from './src/types.ts';
+import { Reminder, TelegramConfig, RollbackPoint, TelegramLog, RecurrenceType, GitHubActionRun } from './src/types.ts';
 import { parseNaturalReminder } from './src/utils/telegramHelper.ts';
 
 dotenv.config();
@@ -24,6 +24,11 @@ interface StoreSchema {
   telegramConfig: TelegramConfig;
   rollbacks: RollbackPoint[];
   logs: TelegramLog[];
+  githubActions: {
+    secret: string;
+    scheduleCron: string;
+    runs: GitHubActionRun[];
+  };
 }
 
 function getInitialReminders(): Reminder[] {
@@ -44,7 +49,12 @@ let store: StoreSchema = {
     webhookUrl: process.env.APP_URL ? `${process.env.APP_URL}/api/telegram/webhook` : undefined
   },
   rollbacks: [],
-  logs: []
+  logs: [],
+  githubActions: {
+    secret: process.env.GITHUB_ACTIONS_SECRET || 'nr_gh_sec_' + Math.random().toString(36).substring(2, 10),
+    scheduleCron: '*/15 * * * *',
+    runs: []
+  }
 };
 
 // Load saved data if exists
@@ -59,6 +69,11 @@ try {
         telegramConfig: {
           ...store.telegramConfig,
           ...(parsed.telegramConfig || {})
+        },
+        githubActions: {
+          secret: process.env.GITHUB_ACTIONS_SECRET || parsed.githubActions?.secret || store.githubActions.secret,
+          scheduleCron: parsed.githubActions?.scheduleCron || '*/15 * * * *',
+          runs: Array.isArray(parsed.githubActions?.runs) ? parsed.githubActions.runs : []
         }
       };
     }
@@ -187,22 +202,33 @@ function calculateNextRecurrence(currentDueDate: string, recurrence: RecurrenceT
 }
 
 // Background scheduler tick checking due deadlines
-async function runReminderTick() {
+async function runReminderTick(options?: { forceNotify?: boolean; source?: string }): Promise<{
+  checkedCount: number;
+  notifiedCount: number;
+  notifiedReminders: Reminder[];
+}> {
   const now = new Date();
   const nowMs = now.getTime();
+  const forceNotify = Boolean(options?.forceNotify);
+  const sourceName = options?.source || 'scheduler';
+
+  let checkedCount = 0;
+  const notifiedReminders: Reminder[] = [];
 
   for (const reminder of store.reminders) {
     if (reminder.completed) continue;
+    checkedCount++;
 
     const dueMs = new Date(reminder.dueDate).getTime();
     const noticeMs = (reminder.advanceNoticeMinutes || 0) * 60 * 1000;
     const triggerMs = dueMs - noticeMs;
 
-    // Check if this reminder is due and has not been notified
-    if (nowMs >= triggerMs && !reminder.notified) {
-      console.log(`[Scheduler] Due reminder: "${reminder.title}" (Due: ${reminder.dueDate})`);
+    // Check if this reminder is due and has not been notified (or forced)
+    if ((nowMs >= triggerMs && !reminder.notified) || forceNotify) {
+      console.log(`[Scheduler] Due reminder: "${reminder.title}" (Due: ${reminder.dueDate}) [Triggered by ${sourceName}]`);
       reminder.notified = true;
       reminder.notifiedAt = now.toISOString();
+      notifiedReminders.push(reminder);
 
       // Dispatch to Telegram if configured
       if (store.telegramConfig.enabled && store.telegramConfig.botToken && store.telegramConfig.chatId) {
@@ -213,6 +239,7 @@ async function runReminderTick() {
         const priorityEmoji = reminder.priority === 'p1' ? '🔴 High' : reminder.priority === 'p2' ? '🟡 Medium' : '🟢 Normal';
         const msg = [
           `⏰ *NOMATIC REMEMBER ALERT*`,
+          sourceName === 'github_actions' ? `⚡ _Dispatched by GitHub Actions Runner_` : '',
           `─────────────────────────`,
           `📌 *${reminder.title}*`,
           reminder.description ? `📝 _${reminder.description}_` : '',
@@ -242,10 +269,57 @@ async function runReminderTick() {
       saveStore();
     }
   }
+
+  return {
+    checkedCount,
+    notifiedCount: notifiedReminders.length,
+    notifiedReminders
+  };
+}
+
+// Send Daily Digest of tasks scheduled for today
+async function sendDailyDigest(customChatId?: string): Promise<{ success: boolean; count: number; error?: string; messageText?: string }> {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const active = store.reminders.filter(r => !r.completed);
+  const todayTasks = active.filter(r => r.dueDate.startsWith(todayStr));
+
+  let msg = [
+    `🌅 *NOMATIC REMEMBER — DAILY DIGEST*`,
+    `─────────────────────────`,
+    `📅 *${now.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}*`,
+    `📌 Total Due Today: *${todayTasks.length}* task(s)`,
+    `📋 Total Active Reminders: *${active.length}*`,
+    `─────────────────────────`
+  ].join('\n');
+
+  if (todayTasks.length === 0) {
+    msg += `\n🎉 *No deadlines scheduled for today!* Enjoy your day or plan ahead in the web app.\n`;
+  } else {
+    msg += '\n' + todayTasks.map((t, idx) => {
+      const timeFormatted = new Date(t.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const priorityEmoji = t.priority === 'p1' ? '🔴' : t.priority === 'p2' ? '🟡' : '🟢';
+      return `${idx + 1}. ${priorityEmoji} *${t.title}* at *${timeFormatted}* [${t.category.toUpperCase()}]`;
+    }).join('\n') + '\n';
+  }
+
+  if (process.env.APP_URL) {
+    msg += `\n🔗 [Open Nomatic Remember Web App](${process.env.APP_URL})`;
+  }
+
+  const tgRes = await sendTelegramMessage(msg, customChatId);
+  return {
+    success: tgRes.success,
+    count: todayTasks.length,
+    error: tgRes.error,
+    messageText: msg
+  };
 }
 
 // Run tick every 10 seconds for exact timing
-setInterval(runReminderTick, 10000);
+setInterval(() => {
+  runReminderTick().catch(e => console.error('[Scheduler] Tick error:', e));
+}, 10000);
 
 // API Endpoints
 // Status & Dashboard Overview
@@ -268,7 +342,8 @@ app.get('/api/status', (_req: Request, res: Response) => {
     telegramConfigured: Boolean(store.telegramConfig.isVerified && store.telegramConfig.botToken && store.telegramConfig.chatId),
     rollbackCount: store.rollbacks.length,
     lastTick: now.toISOString(),
-    nextScheduledReminder: sortedUpcoming[0] || null
+    nextScheduledReminder: sortedUpcoming[0] || null,
+    githubActionsLastRun: store.githubActions?.runs[0] || null
   });
 });
 
@@ -900,12 +975,228 @@ app.post('/api/telegram/simulate', async (req: Request, res: Response) => {
 
 // Vercel Cron Endpoint (`/api/cron/tick`)
 app.get('/api/cron/tick', async (_req: Request, res: Response) => {
-  await runReminderTick();
+  const result = await runReminderTick({ source: 'cron_tick' });
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
+    checkedCount: result.checkedCount,
+    notifiedCount: result.notifiedCount,
     activeCount: store.reminders.filter(r => !r.completed).length
   });
+});
+
+// GitHub Actions Integration Endpoints
+// GET GitHub Actions Configuration & Status
+app.get('/api/github-actions/config', (req: Request, res: Response) => {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000';
+  const detectedUrl = process.env.APP_URL || `${protocol}://${host}`;
+
+  res.json({
+    enabled: true,
+    secret: store.githubActions.secret,
+    scheduleCron: store.githubActions.scheduleCron || '*/15 * * * *',
+    endpointUrl: `${detectedUrl}/api/github-actions/run`,
+    appUrl: detectedUrl,
+    lastRun: store.githubActions.runs[0] || null,
+    totalRuns: store.githubActions.runs.length,
+    telegramConfigured: Boolean(store.telegramConfig.botToken && store.telegramConfig.chatId),
+    telegramChatId: store.telegramConfig.chatId || '',
+    activeRemindersCount: store.reminders.filter(r => !r.completed).length
+  });
+});
+
+// GET Recent GitHub Action Runs
+app.get('/api/github-actions/runs', (_req: Request, res: Response) => {
+  res.json(store.githubActions.runs || []);
+});
+
+// POST / GET Execute GitHub Action Notification Check
+const handleGitHubActionRun = async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  const authHeader = req.headers.authorization || '';
+  const providedToken =
+    authHeader.replace(/^Bearer\s+/i, '').trim() ||
+    String(req.headers['x-cron-secret'] || '').trim() ||
+    String(req.headers['x-github-token'] || '').trim() ||
+    String(req.query.token || '').trim();
+
+  // Validate Secret if one is configured
+  const expectedSecret = store.githubActions.secret || process.env.GITHUB_ACTIONS_SECRET || process.env.CRON_SECRET;
+  if (expectedSecret && providedToken !== expectedSecret) {
+    addLog('error', `GitHub Actions unauthorized trigger attempt (Invalid or missing token)`, false);
+    res.status(401).json({
+      error: 'Unauthorized: Invalid or missing GitHub Actions secret token',
+      hint: 'Include Authorization: Bearer <secret> or header x-cron-secret'
+    });
+    return;
+  }
+
+  const action = String(req.body?.action || req.query.action || 'tick');
+  const forceNotify = Boolean(req.body?.forceNotify || req.query.force === 'true');
+  const ghEvent = String(req.body?.githubEvent || req.headers['x-github-event'] || 'webhook');
+
+  try {
+    let checkedCount = 0;
+    let notifiedCount = 0;
+    let notifiedTitles: string[] = [];
+    let summaryMessage = '';
+
+    if (action === 'digest') {
+      const digestResult = await sendDailyDigest();
+      checkedCount = store.reminders.filter(r => !r.completed).length;
+      notifiedCount = digestResult.count;
+      summaryMessage = `Morning Daily Digest dispatched (${digestResult.count} tasks due today)`;
+    } else if (action === 'test') {
+      const now = new Date();
+      const testMsg = [
+        `🔔 *NOMATIC REMEMBER — GITHUB ACTIONS TEST ALERT*`,
+        `─────────────────────────`,
+        `✅ GitHub Actions runner trigger verified successfully!`,
+        `⏰ Time: *${now.toLocaleTimeString()}*`,
+        `📋 Active Reminders in Store: *${store.reminders.filter(r => !r.completed).length}*`,
+        `⚡ Scheduled Cron: \`${store.githubActions.scheduleCron}\``,
+        `─────────────────────────`,
+        `Your GitHub Actions scheduled workflow is configured and can alert your Telegram reliably.`
+      ].join('\n');
+      const tgRes = await sendTelegramMessage(testMsg);
+      checkedCount = store.reminders.filter(r => !r.completed).length;
+      notifiedCount = tgRes.success ? 1 : 0;
+      notifiedTitles = ['GitHub Actions Test Alert'];
+      summaryMessage = 'Test notification delivered from GitHub Actions trigger';
+    } else {
+      // Standard exact-time tick check
+      const tickResult = await runReminderTick({ forceNotify, source: 'github_actions' });
+      checkedCount = tickResult.checkedCount;
+      notifiedCount = tickResult.notifiedCount;
+      notifiedTitles = tickResult.notifiedReminders.map(r => r.title);
+      summaryMessage = notifiedCount > 0
+        ? `Dispatched ${notifiedCount} exact-time reminder alert(s)`
+        : `Evaluated ${checkedCount} reminder(s). No deadlines due at this time.`;
+    }
+
+    const durationMs = Date.now() - startTime;
+    const runRecord: GitHubActionRun = {
+      id: 'gh-run-' + Date.now(),
+      timestamp: new Date().toISOString(),
+      trigger: ghEvent === 'schedule' ? 'schedule' : ghEvent === 'workflow_dispatch' ? 'workflow_dispatch' : req.body?.source === 'manual_test' ? 'manual_test' : 'webhook',
+      status: 'success',
+      checkedCount,
+      notifiedCount,
+      notifiedTitles,
+      durationMs,
+      details: summaryMessage
+    };
+
+    store.githubActions.runs.unshift(runRecord);
+    if (store.githubActions.runs.length > 30) {
+      store.githubActions.runs = store.githubActions.runs.slice(0, 30);
+    }
+
+    addLog('github_actions', `GitHub Actions [${action}]: ${summaryMessage} (${durationMs}ms)`, true);
+    saveStore();
+
+    res.json({
+      success: true,
+      action,
+      timestamp: runRecord.timestamp,
+      checkedCount,
+      notifiedCount,
+      notifiedTitles,
+      durationMs,
+      message: summaryMessage,
+      runId: runRecord.id
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const durationMs = Date.now() - startTime;
+
+    const failedRun: GitHubActionRun = {
+      id: 'gh-run-' + Date.now(),
+      timestamp: new Date().toISOString(),
+      trigger: 'webhook',
+      status: 'failed',
+      checkedCount: 0,
+      notifiedCount: 0,
+      durationMs,
+      details: `Execution error: ${message}`
+    };
+
+    store.githubActions.runs.unshift(failedRun);
+    addLog('error', `GitHub Actions run failed: ${message}`, false);
+    saveStore();
+
+    res.status(500).json({ success: false, error: message });
+  }
+};
+
+app.post('/api/github-actions/run', handleGitHubActionRun);
+app.get('/api/github-actions/run', handleGitHubActionRun);
+
+// POST Test Trigger Directly (From Web App UI)
+app.post('/api/github-actions/test', async (_req: Request, res: Response) => {
+  const startTime = Date.now();
+  try {
+    const tickResult = await runReminderTick({ forceNotify: false, source: 'ui_test' });
+    const now = new Date();
+
+    const testMsg = [
+      `⚡ *NOMATIC REMEMBER — GITHUB ACTIONS INTEGRATION TEST*`,
+      `─────────────────────────`,
+      `✅ Trigger received and processed by applet!`,
+      `⏰ Timestamp: *${now.toLocaleString()}*`,
+      `📋 Reminders Evaluated: *${tickResult.checkedCount}*`,
+      `🔔 Active Alerts Sent: *${tickResult.notifiedCount}*`,
+      `─────────────────────────`,
+      `GitHub Actions will execute this exact workflow on schedule \`${store.githubActions.scheduleCron}\`.`
+    ].join('\n');
+
+    let telegramSent = false;
+    if (store.telegramConfig.botToken && store.telegramConfig.chatId) {
+      const tgRes = await sendTelegramMessage(testMsg);
+      telegramSent = tgRes.success;
+    }
+
+    const durationMs = Date.now() - startTime;
+    const runRecord: GitHubActionRun = {
+      id: 'gh-run-test-' + Date.now(),
+      timestamp: now.toISOString(),
+      trigger: 'manual_test',
+      status: 'success',
+      checkedCount: tickResult.checkedCount,
+      notifiedCount: tickResult.notifiedCount,
+      notifiedTitles: tickResult.notifiedReminders.map(r => r.title),
+      durationMs,
+      details: `Manual test: Evaluated ${tickResult.checkedCount} reminders (Telegram: ${telegramSent ? 'delivered' : 'skipped'})`
+    };
+
+    store.githubActions.runs.unshift(runRecord);
+    if (store.githubActions.runs.length > 30) {
+      store.githubActions.runs = store.githubActions.runs.slice(0, 30);
+    }
+    saveStore();
+
+    res.json({
+      success: true,
+      telegramSent,
+      checkedCount: tickResult.checkedCount,
+      notifiedCount: tickResult.notifiedCount,
+      run: runRecord,
+      message: 'Integration test executed successfully!'
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+// POST Regenerate Secret
+app.post('/api/github-actions/regenerate-secret', (_req: Request, res: Response) => {
+  const newSecret = 'nr_gh_sec_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+  store.githubActions.secret = newSecret;
+  saveStore();
+  addLog('sync', 'Regenerated GitHub Actions webhook secret', true);
+  res.json({ success: true, secret: newSecret });
 });
 
 // Vite / Static Files Setup

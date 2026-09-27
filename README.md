@@ -125,6 +125,38 @@ You need your numerical Telegram User/Chat ID so the bot knows where to send you
 
 ---
 
+## ⚡ GitHub Actions Scheduled Notifications
+
+Nomatic Remember includes automated GitHub Actions workflows that run 24/7 in the cloud on a scheduled cron (`*/15 * * * *`). This ensures your exact-time deadline alerts and morning digests are dispatched to Telegram even if your browser tab is closed or your host goes to sleep!
+
+### 📁 Included Workflows:
+
+1. **`remember-notifications.yml`** (`.github/workflows/remember-notifications.yml`):
+   * **Schedule**: Runs every 15 minutes (`*/15 * * * *`).
+   * **Manual Trigger**: Supports `workflow_dispatch` with options for `tick`, `digest`, and `test`.
+   * **Exact-Time Evaluation**: Checks all pending tasks, triggers due reminders, and posts a Markdown report directly to `$GITHUB_STEP_SUMMARY`.
+
+2. **`daily-digest.yml`** (`.github/workflows/daily-digest.yml`):
+   * **Schedule**: Runs daily at 08:00 UTC (`0 8 * * *`).
+   * **Morning Briefing**: Sends a structured summary of all tasks due for the day directly to Telegram.
+
+3. **`scripts/github-actions-notify.mjs`**:
+   * Lightweight standalone runner executed by GitHub Actions.
+   * Can trigger the live app endpoint (`/api/github-actions/run`) or fallback to direct Telegram Bot API dispatch.
+
+### 🔑 GitHub Repository Secrets:
+
+In your GitHub repository, go to **Settings** &rarr; **Secrets and variables** &rarr; **Actions** &rarr; **New repository secret**:
+
+| Secret Name | Description | Example / Source |
+| :--- | :--- | :--- |
+| `APP_URL` | Public URL of your deployed Nomatic Remember instance | `https://your-app.run.app` |
+| `GITHUB_ACTIONS_SECRET` | Webhook bearer token protecting the runner trigger endpoint | Shown in the **GitHub Actions** tab in web app |
+| `TELEGRAM_BOT_TOKEN` | Bot API token for direct alerts | From `@BotFather` |
+| `TELEGRAM_CHAT_ID` | Your recipient numeric chat ID | Shown in Telegram Hub |
+
+---
+
 ## 🚀 How to Run the Project Locally
 
 ### 📋 Prerequisites

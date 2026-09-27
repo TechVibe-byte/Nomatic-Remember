@@ -1,9 +1,9 @@
 import React from 'react';
-import { CheckSquare, Calendar, Send, RotateCcw, Plus } from 'lucide-react';
+import { CheckSquare, Calendar, Send, RotateCcw, Plus, Zap } from 'lucide-react';
 
 interface MobileBottomNavProps {
-  currentView: 'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks';
-  onSelectView: (view: 'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks') => void;
+  currentView: 'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks' | 'github-actions';
+  onSelectView: (view: 'tasks' | 'today' | 'upcoming' | 'telegram' | 'rollbacks' | 'github-actions') => void;
   onOpenNewModal: () => void;
 }
 
@@ -59,17 +59,18 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           <span className="text-[10px] mt-1 tracking-tight">Telegram</span>
         </button>
 
-        {/* Tab 4: Change Log & Rollback */}
+        {/* Tab 4: GitHub Actions */}
         <button
-          onClick={() => onSelectView('rollbacks')}
+          onClick={() => onSelectView('github-actions')}
           className={`min-h-[44px] flex flex-col items-center justify-center transition-colors cursor-pointer ${
-            currentView === 'rollbacks' ? 'text-amber-400 font-semibold' : 'text-slate-400 hover:text-slate-200'
+            currentView === 'github-actions' ? 'text-amber-400 font-semibold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <RotateCcw className="w-4 h-4" />
-          <span className="text-[10px] mt-1 tracking-tight">Change Log</span>
+          <Zap className="w-4 h-4" />
+          <span className="text-[10px] mt-1 tracking-tight">Actions</span>
         </button>
       </div>
     </div>
   );
 };
+
