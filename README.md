@@ -151,7 +151,7 @@ In your GitHub repository, go to **Settings** &rarr; **Secrets and variables** &
 | Secret Name | Description | Example / Source |
 | :--- | :--- | :--- |
 | `APP_URL` | Public URL of your deployed Nomatic Remember instance | `https://your-app.run.app` |
-| `GITHUB_ACTIONS_SECRET` | Webhook bearer token protecting the runner trigger endpoint | Shown in the **GitHub Actions** tab in web app |
+| `REMINDER_CRON_SECRET` | Webhook bearer token protecting the runner trigger endpoint | Shown in the **GitHub Actions** tab in web app |
 | `TELEGRAM_BOT_TOKEN` | Bot API token for direct alerts | From `@BotFather` |
 | `TELEGRAM_CHAT_ID` | Your recipient numeric chat ID | Shown in Telegram Hub |
 

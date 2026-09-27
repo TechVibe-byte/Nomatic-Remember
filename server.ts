@@ -1022,7 +1022,7 @@ const handleGitHubActionRun = async (req: Request, res: Response) => {
     String(req.query.token || '').trim();
 
   // Validate Secret if one is configured
-  const expectedSecret = store.githubActions.secret || process.env.GITHUB_ACTIONS_SECRET || process.env.CRON_SECRET;
+  const expectedSecret = store.githubActions.secret || process.env.REMINDER_CRON_SECRET || process.env.CRON_SECRET || process.env.GITHUB_ACTIONS_SECRET;
   if (expectedSecret && providedToken !== expectedSecret) {
     addLog('error', `GitHub Actions unauthorized trigger attempt (Invalid or missing token)`, false);
     res.status(401).json({

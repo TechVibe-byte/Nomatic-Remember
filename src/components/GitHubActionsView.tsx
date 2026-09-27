@@ -200,7 +200,7 @@ jobs:
       - name: Run Nomatic Remember Notification Dispatcher
         env:
           APP_URL: \${{ secrets.APP_URL }}
-          GITHUB_ACTIONS_SECRET: \${{ secrets.GITHUB_ACTIONS_SECRET }}
+          REMINDER_CRON_SECRET: \${{ secrets.REMINDER_CRON_SECRET || secrets.CRON_SECRET }}
           TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
           ACTION_TYPE: \${{ github.event.inputs.action_type || 'tick' }}
@@ -244,7 +244,7 @@ jobs:
       - name: Dispatch Morning Schedule Digest
         env:
           APP_URL: \${{ secrets.APP_URL }}
-          GITHUB_ACTIONS_SECRET: \${{ secrets.GITHUB_ACTIONS_SECRET }}
+          REMINDER_CRON_SECRET: \${{ secrets.REMINDER_CRON_SECRET || secrets.CRON_SECRET }}
           TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
           ACTION_TYPE: digest
@@ -544,10 +544,10 @@ jobs:
               </div>
             </div>
 
-            {/* Secret 2: GITHUB_ACTIONS_SECRET */}
+            {/* Secret 2: REMINDER_CRON_SECRET */}
             <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/90 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-amber-400">GITHUB_ACTIONS_SECRET</span>
+                <span className="font-mono text-xs font-bold text-amber-400">REMINDER_CRON_SECRET</span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setShowSecret(!showSecret)}

@@ -12,7 +12,7 @@ import fs from 'fs';
 import path from 'path';
 
 const APP_URL = (process.env.APP_URL || '').replace(/\/+$/, '');
-const GITHUB_ACTIONS_SECRET = process.env.GITHUB_ACTIONS_SECRET || process.env.CRON_SECRET || '';
+const CRON_SECRET = process.env.REMINDER_CRON_SECRET || process.env.CRON_SECRET || process.env.GITHUB_ACTIONS_SECRET || '';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const ACTION_TYPE = process.env.ACTION_TYPE || 'tick'; // 'tick' | 'digest' | 'test'
@@ -69,9 +69,9 @@ async function main() {
         'Content-Type': 'application/json',
         'User-Agent': 'NomaticRemember-GitHubActions/1.0'
       };
-      if (GITHUB_ACTIONS_SECRET) {
-        headers['Authorization'] = `Bearer ${GITHUB_ACTIONS_SECRET}`;
-        headers['x-cron-secret'] = GITHUB_ACTIONS_SECRET;
+      if (CRON_SECRET) {
+        headers['Authorization'] = `Bearer ${CRON_SECRET}`;
+        headers['x-cron-secret'] = CRON_SECRET;
       }
 
       const response = await fetch(targetUrl, {
