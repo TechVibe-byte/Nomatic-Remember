@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GitHubActionRun } from '../types.ts';
+import { getLocalReminders } from '../utils/telegramClient.ts';
 import {
   Play,
   Copy,
@@ -119,13 +120,15 @@ export const GitHubActionsView: React.FC<GitHubActionsViewProps> = ({
         headers['x-cron-secret'] = activeSecret || 'nr_gh_sec_qbda0ivq';
       }
 
+      const clientReminders = getLocalReminders();
       const res = await fetch('/api/github-actions/run', {
         method: 'POST',
         headers,
         body: JSON.stringify({
           action: selectedActionType,
           source: 'manual_test',
-          githubEvent: 'workflow_dispatch'
+          githubEvent: 'workflow_dispatch',
+          clientReminders
         })
       });
 
@@ -374,10 +377,14 @@ jobs:
               <div className="font-semibold text-sm">
                 {testResult.success ? 'Workflow Trigger Successful' : 'Workflow Trigger Failed'}
               </div>
-              <div className="text-slate-300">{testResult.message}</div>
+              <div className="text-slate-300 font-medium">{testResult.message}</div>
               {testResult.details && (
-                <div className="text-[11px] font-mono text-slate-400 pt-1">
-                  Evaluated: {Number(testResult.details.checkedCount ?? 0)} reminders | Alerts: {Number(testResult.details.notifiedCount ?? 0)} sent | Latency: {Number(testResult.details.durationMs ?? 0)}ms
+                <div className="text-[11px] font-mono text-slate-300 pt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>Pending: <strong className="text-amber-400">{Number((testResult.details as Record<string, number>)?.checkedCount ?? 0)}</strong></span>
+                  <span>Completed: <strong className="text-emerald-400">{Number((testResult.details as Record<string, number>)?.completedCount ?? 0)}</strong></span>
+                  <span>Total in DB: <strong className="text-white">{Number((testResult.details as Record<string, number>)?.totalCount ?? (Number((testResult.details as Record<string, number>)?.checkedCount || 0) + Number((testResult.details as Record<string, number>)?.completedCount || 0)))}</strong></span>
+                  <span>Alerts Sent: <strong className="text-cyan-400">{Number((testResult.details as Record<string, number>)?.notifiedCount ?? 0)}</strong></span>
+                  <span>Latency: {Number((testResult.details as Record<string, number>)?.durationMs ?? 0)}ms</span>
                 </div>
               )}
             </div>

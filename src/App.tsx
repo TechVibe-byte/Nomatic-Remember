@@ -222,14 +222,33 @@ export default function App() {
       ]);
 
       let currentReminders: Reminder[] = [];
+      const localRems = getLocalReminders();
 
-      if (remRes.ok && remRes.data) {
-        currentReminders = remRes.data;
-        setReminders(remRes.data);
-        saveLocalReminders(remRes.data);
+      if (remRes.ok && Array.isArray(remRes.data)) {
+        // If server is empty but local storage has reminders, sync up to server immediately
+        if (remRes.data.length === 0 && localRems.length > 0) {
+          const syncRes = await safeFetchJson<{ reminders: Reminder[] }>('/api/reminders/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reminders: localRems })
+          });
+          currentReminders = syncRes.ok && syncRes.data?.reminders ? syncRes.data.reminders : localRems;
+        } else if (localRems.length > remRes.data.length) {
+          // Client has items missing on the server, merge with server
+          const syncRes = await safeFetchJson<{ reminders: Reminder[] }>('/api/reminders/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reminders: localRems })
+          });
+          currentReminders = syncRes.ok && syncRes.data?.reminders ? syncRes.data.reminders : remRes.data;
+        } else {
+          currentReminders = remRes.data;
+        }
+        setReminders(currentReminders);
+        saveLocalReminders(currentReminders);
       } else {
         // Fallback to local storage
-        currentReminders = getLocalReminders();
+        currentReminders = localRems;
         setReminders(currentReminders);
       }
 
@@ -328,6 +347,11 @@ export default function App() {
           return r;
         });
         saveLocalReminders(updated);
+        safeFetchJson('/api/reminders/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reminders: updated })
+        }).catch(() => {});
         return updated;
       });
     } catch (err) {
@@ -341,6 +365,11 @@ export default function App() {
       setReminders(prev => {
         const updated = prev.filter(r => r.id !== id);
         saveLocalReminders(updated);
+        safeFetchJson('/api/reminders/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reminders: updated })
+        }).catch(() => {});
         return updated;
       });
     } catch (err) {
@@ -411,6 +440,11 @@ export default function App() {
         setReminders(prev => {
           const updated = prev.map(r => (r.id === data.id ? { ...r, ...data, updatedAt: new Date().toISOString() } as Reminder : r));
           saveLocalReminders(updated);
+          safeFetchJson('/api/reminders/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reminders: updated })
+          }).catch(() => {});
           return updated;
         });
       } else {
@@ -445,6 +479,11 @@ export default function App() {
         setReminders(prev => {
           const updated = [newRem, ...prev];
           saveLocalReminders(updated);
+          safeFetchJson('/api/reminders/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reminders: updated })
+          }).catch(() => {});
           return updated;
         });
       }

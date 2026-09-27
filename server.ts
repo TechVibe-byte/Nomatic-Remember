@@ -409,6 +409,53 @@ app.post('/api/reminders', (req: Request, res: Response) => {
   res.status(201).json(newReminder);
 });
 
+// POST Bidirectional sync reminders between client and server
+app.post('/api/reminders/sync', (req: Request, res: Response) => {
+  const clientReminders: Reminder[] = Array.isArray(req.body?.reminders) ? req.body.reminders : [];
+  
+  const reminderMap = new Map<string, Reminder>();
+  // 1. Seed with existing server reminders
+  for (const r of store.reminders) {
+    if (r && r.id) reminderMap.set(r.id, r);
+  }
+  
+  // 2. Merge client reminders
+  let changed = false;
+  for (const cr of clientReminders) {
+    if (!cr || !cr.id) continue;
+    const existing = reminderMap.get(cr.id);
+    if (!existing) {
+      reminderMap.set(cr.id, cr);
+      changed = true;
+    } else {
+      const clientUpdated = new Date(cr.updatedAt || cr.createdAt || 0).getTime();
+      const serverUpdated = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+      if (clientUpdated > serverUpdated) {
+        reminderMap.set(cr.id, { ...existing, ...cr });
+        changed = true;
+      }
+    }
+  }
+
+  store.reminders = Array.from(reminderMap.values());
+  store.reminders.sort((a, b) => {
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+  });
+
+  if (changed) {
+    saveStore();
+  }
+
+  res.json({
+    success: true,
+    reminders: store.reminders,
+    count: store.reminders.length,
+    activeCount: store.reminders.filter(r => !r.completed).length,
+    completedCount: store.reminders.filter(r => r.completed).length
+  });
+});
+
 // PUT Update Reminder
 app.put('/api/reminders/:id', (req: Request, res: Response) => {
   const { id } = req.params;
@@ -1046,15 +1093,58 @@ const handleGitHubActionRun = async (req: Request, res: Response) => {
   const forceNotify = Boolean(req.body?.forceNotify || req.query.force === 'true');
   const ghEvent = String(req.body?.githubEvent || req.headers['x-github-event'] || 'webhook');
 
+  // If the client provided client reminders (from web UI test or sync), merge them
+  const incomingClientReminders: Reminder[] = Array.isArray(req.body?.clientReminders)
+    ? req.body.clientReminders
+    : Array.isArray(req.body?.reminders)
+    ? req.body.reminders
+    : [];
+
+  if (incomingClientReminders.length > 0) {
+    const reminderMap = new Map<string, Reminder>();
+    for (const r of store.reminders) {
+      if (r?.id) reminderMap.set(r.id, r);
+    }
+    let anyNewOrUpdated = false;
+    for (const cr of incomingClientReminders) {
+      if (!cr || !cr.id) continue;
+      const existing = reminderMap.get(cr.id);
+      if (!existing) {
+        reminderMap.set(cr.id, cr);
+        anyNewOrUpdated = true;
+      } else {
+        const clientUpdated = new Date(cr.updatedAt || cr.createdAt || 0).getTime();
+        const serverUpdated = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+        if (clientUpdated > serverUpdated) {
+          reminderMap.set(cr.id, { ...existing, ...cr });
+          anyNewOrUpdated = true;
+        }
+      }
+    }
+    if (anyNewOrUpdated) {
+      store.reminders = Array.from(reminderMap.values());
+      store.reminders.sort((a, b) => {
+        if (a.completed !== b.completed) return a.completed ? 1 : -1;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      });
+      saveStore();
+    }
+  }
+
   try {
     let checkedCount = 0;
     let notifiedCount = 0;
     let notifiedTitles: string[] = [];
     let summaryMessage = '';
 
+    const activeReminders = store.reminders.filter(r => !r.completed);
+    const completedCount = store.reminders.filter(r => r.completed).length;
+    const sortedUpcoming = [...activeReminders].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    const nextDue = sortedUpcoming[0];
+
     if (action === 'digest') {
       const digestResult = await sendDailyDigest();
-      checkedCount = store.reminders.filter(r => !r.completed).length;
+      checkedCount = activeReminders.length;
       notifiedCount = digestResult.count;
       summaryMessage = `Morning Daily Digest dispatched (${digestResult.count} tasks due today)`;
     } else if (action === 'test') {
@@ -1064,25 +1154,35 @@ const handleGitHubActionRun = async (req: Request, res: Response) => {
         `─────────────────────────`,
         `✅ GitHub Actions runner trigger verified successfully!`,
         `⏰ Time: *${now.toLocaleTimeString()}*`,
-        `📋 Active Reminders in Store: *${store.reminders.filter(r => !r.completed).length}*`,
+        `📋 Active Reminders in Store: *${activeReminders.length}*`,
+        `✅ Completed Reminders: *${completedCount}*`,
         `⚡ Scheduled Cron: \`${store.githubActions.scheduleCron}\``,
         `─────────────────────────`,
         `Your GitHub Actions scheduled workflow is configured and can alert your Telegram reliably.`
       ].join('\n');
       const tgRes = await sendTelegramMessage(testMsg);
-      checkedCount = store.reminders.filter(r => !r.completed).length;
+      checkedCount = activeReminders.length;
       notifiedCount = tgRes.success ? 1 : 0;
       notifiedTitles = ['GitHub Actions Test Alert'];
-      summaryMessage = 'Test notification delivered from GitHub Actions trigger';
+      summaryMessage = `Test notification delivered from GitHub Actions trigger (${activeReminders.length} active, ${completedCount} completed)`;
     } else {
       // Standard exact-time tick check
       const tickResult = await runReminderTick({ forceNotify, source: 'github_actions' });
       checkedCount = tickResult.checkedCount;
       notifiedCount = tickResult.notifiedCount;
       notifiedTitles = tickResult.notifiedReminders.map(r => r.title);
-      summaryMessage = notifiedCount > 0
-        ? `Dispatched ${notifiedCount} exact-time reminder alert(s)`
-        : `Evaluated ${checkedCount} reminder(s). No deadlines due at this time.`;
+
+      if (notifiedCount > 0) {
+        summaryMessage = `Dispatched ${notifiedCount} exact-time reminder alert(s): ${notifiedTitles.join(', ')}`;
+      } else if (activeReminders.length === 0 && completedCount > 0) {
+        summaryMessage = `Evaluated 0 pending reminders (${completedCount} completed task(s) already marked done).`;
+      } else if (activeReminders.length > 0) {
+        const nextTimeStr = nextDue ? new Date(nextDue.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const nextDateStr = nextDue ? new Date(nextDue.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '';
+        summaryMessage = `Evaluated ${checkedCount} active reminder(s)${completedCount > 0 ? ` (${completedCount} completed)` : ''}. No deadlines due right now. Next due: "${nextDue?.title}" on ${nextDateStr} at ${nextTimeStr}.`;
+      } else {
+        summaryMessage = `No reminders in database yet. Add a reminder in the Tasks tab or via Quick Add.`;
+      }
     }
 
     const durationMs = Date.now() - startTime;
@@ -1093,6 +1193,8 @@ const handleGitHubActionRun = async (req: Request, res: Response) => {
       status: 'success',
       checkedCount,
       notifiedCount,
+      completedCount,
+      totalCount: store.reminders.length,
       notifiedTitles,
       durationMs,
       details: summaryMessage
@@ -1111,6 +1213,8 @@ const handleGitHubActionRun = async (req: Request, res: Response) => {
       action,
       timestamp: runRecord.timestamp,
       checkedCount,
+      completedCount,
+      totalCount: store.reminders.length,
       notifiedCount,
       notifiedTitles,
       durationMs,

@@ -79,6 +79,8 @@ export interface GitHubActionRun {
   status: 'success' | 'warning' | 'failed';
   checkedCount: number;
   notifiedCount: number;
+  completedCount?: number;
+  totalCount?: number;
   details?: string;
   notifiedTitles?: string[];
   durationMs?: number;
