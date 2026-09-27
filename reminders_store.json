@@ -22,6 +22,30 @@
   ],
   "logs": [
     {
+      "id": "log-1790533512780-wg82r",
+      "type": "error",
+      "message": "GitHub Actions unauthorized trigger attempt (Invalid or missing token)",
+      "timestamp": "2026-09-27T18:25:12.780Z",
+      "success": false,
+      "chatId": ""
+    },
+    {
+      "id": "log-1790533505719-rbvrf",
+      "type": "github_actions",
+      "message": "GitHub Actions [tick]: Evaluated 0 reminder(s). No deadlines due at this time. (0ms)",
+      "timestamp": "2026-09-27T18:25:05.719Z",
+      "success": true,
+      "chatId": ""
+    },
+    {
+      "id": "log-1790533498106-l6bet",
+      "type": "github_actions",
+      "message": "GitHub Actions [tick]: Evaluated 0 reminder(s). No deadlines due at this time. (1ms)",
+      "timestamp": "2026-09-27T18:24:58.106Z",
+      "success": true,
+      "chatId": ""
+    },
+    {
       "id": "log-1790529129158-5fpk4",
       "type": "github_actions",
       "message": "GitHub Actions [tick]: Evaluated 0 reminder(s). No deadlines due at this time. (1ms)",
@@ -66,6 +90,28 @@
     "secret": "nr_gh_sec_qbda0ivq",
     "scheduleCron": "*/15 * * * *",
     "runs": [
+      {
+        "id": "gh-run-1790533505719",
+        "timestamp": "2026-09-27T18:25:05.719Z",
+        "trigger": "workflow_dispatch",
+        "status": "success",
+        "checkedCount": 0,
+        "notifiedCount": 0,
+        "notifiedTitles": [],
+        "durationMs": 0,
+        "details": "Evaluated 0 reminder(s). No deadlines due at this time."
+      },
+      {
+        "id": "gh-run-1790533498106",
+        "timestamp": "2026-09-27T18:24:58.106Z",
+        "trigger": "manual_test",
+        "status": "success",
+        "checkedCount": 0,
+        "notifiedCount": 0,
+        "notifiedTitles": [],
+        "durationMs": 1,
+        "details": "Evaluated 0 reminder(s). No deadlines due at this time."
+      },
       {
         "id": "gh-run-1790529129158",
         "timestamp": "2026-09-27T17:12:09.158Z",
